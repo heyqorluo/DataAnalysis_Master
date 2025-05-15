@@ -1,0 +1,1491 @@
+---
+title: "Nora Master Project Data Analysis Notebook"
+author: "Nora Luo"
+output: html_notebook
+---
+# Table of Contents
+1. [Notation](#notation)
+2. [Load and split the data](#load-and-split-the-data)
+3. [Screening Questions](#screening-questions)
+4. [Actual Survey Analysis](#actual-survey-analysis)
+5. [Statistical Testing](#statistical-testing)\
+
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+------------------------------------------------------------------------
+# README
+- run the Load and split the data chunk first
+- results was filtered based on Q3.9 - whether respondents understand the concept of inflation 
+- ! : We can reject the null hypothesis.\
+
+
+# Load and split the data <a name="load-and-split-the-data"></a>
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(FSA)
+library(car)
+
+
+
+exported_data <- read_csv("rawdata_value.csv")
+exported_data <- subset(exported_data, select = -c(StartDate,EndDate,Status,IPAddress,Progress,Finished,RecordedDate, RecipientLastName,RecipientFirstName,                                  RecipientEmail,ExternalReference,LocationLatitude,LocationLongitude,DistributionChannel,UserLanguage))
+rawdata_value <- subset(exported_data, select =-c(ResponseId,Q1.1,Q2.1))
+rawdata_value <- rawdata_value[3:nrow(rawdata_value), ]
+
+# label the group
+rawdata_value <- rawdata_value %>%
+  mutate(group = case_when(
+    !is.na(Q4.2)  ~ '0-controlled',
+    !is.na(Q6.2)  ~ '1-errorbar',
+    !is.na(Q8.2)  ~ '2-shadedbar',
+    !is.na(Q10.2) ~ '3-fanchartslice',
+    !is.na(Q12.2) ~ '4-bellcurve'
+  ))
+# create a copy of the data for Q3.9 analysis
+rawdata_q3_9 <- rawdata_value
+# filter participants who do not understand the concept of inflation
+rawdata_value <- rawdata_value[rawdata_value$Q3.9 == "4", ]
+
+# rawdata_value <- rawdata_value %>%
+#   mutate(group = case_when(
+#     !is.na(Q4.2)  ~ 0,
+#     !is.na(Q6.2)  ~ 1,
+#     !is.na(Q8.2)  ~ 2,
+#     !is.na(Q10.2) ~ 3,
+#     !is.na(Q12.2) ~ 4
+#   ))
+
+# meta-data
+total_respondents <- nrow(rawdata_value)
+
+group_total <- rawdata_value %>%
+  group_by(group) %>%
+  summarise(n_respondents = n())
+
+# filter treatment groups
+controlled_group <- rawdata_value[!is.na(rawdata_value$Q4.2), ]
+error_bar <-rawdata_value[!is.na(rawdata_value$Q6.2), ]
+shaded_bar <-rawdata_value[!is.na(rawdata_value$Q8.2), ]
+fanchart_slice <-rawdata_value[!is.na(rawdata_value$Q10.2), ]
+bell_curve <-rawdata_value[!is.na(rawdata_value$Q12.2), ]
+
+# adding labels to the groups
+# controlled_group$group <- 1
+# error_bar$group <- 2
+# shaded_bar$group <- 3
+# fanchart_slice$group <- 4
+# bell_curve$group <- 5
+
+
+# remove unnecessary columns
+controlled_group = controlled_group[,grepl("^(Q3|Q4|Q5)",names(controlled_group))|names(controlled_group) %in% c("Duration (in seconds)", "group")]
+error_bar = error_bar[,grepl("^(Q3|Q6|Q7)",names(error_bar))| names(error_bar) %in% c("Duration (in seconds)", "group")]
+shaded_bar = shaded_bar[,grepl("^(Q3|Q8|Q9)",names(shaded_bar))| names(shaded_bar)%in% c("Duration (in seconds)", "group")]
+fanchart_slice = fanchart_slice[,grepl("^(Q3|Q10|Q11)",names(fanchart_slice))| names(fanchart_slice) %in% c("Duration (in seconds)", "group")]
+bell_curve = bell_curve[,grepl("^(Q3|Q12|Q13)",names(bell_curve))| names(bell_curve) %in% c("Duration (in seconds)", "group")]
+# controlled_group = controlled_group[,!sapply(controlled_group, function(x) mean(is.na(x)))>0.9]
+
+group_list <- list(
+  controlled = controlled_group,
+  errorbar = error_bar,
+  shadedbar = shaded_bar,
+  fanchartslice = fanchart_slice,
+  bellcurve = bell_curve
+)
+
+```
+
+ 
+# Screening Questions <a name="screening-questions"></a>
+
+## ! Time Duration
+Variable: continuous <br> 
+Method: check normality + kruskal-wallis test + post-hoc test\
+**Result: p\< 0.05--\> we can reject the hypothesis** <br> controlled group is significantly different from (error bar; shaded bar; fanchart slice; BUT NOT fanchartslice)
+```{r}
+time_duration_table <- rawdata_value[,c("Duration (in seconds)", "group")]
+time_duration_table$`Duration (in mins)` <- as.numeric(time_duration_table$`Duration (in seconds)`)/60
+
+# report quantile information
+summary(time_duration_table$`Duration (in mins)`)
+
+
+# test for normality --> It's definitely not normal distribution
+# shapiro.test(time_duration_table$`Duration (in mins)`)
+
+# run the kruskal-wallis test
+kruskal_test <- kruskal.test(`Duration (in mins)` ~ group, data = time_duration_table)
+print(kruskal_test)
+
+# run post-hoc test
+dunn_test <- dunnTest(`Duration (in mins)` ~ group, data = time_duration_table, method = "bonferroni")
+print(dunn_test)
+
+```
+
+Time duration summary table
+
+```{r}
+time_duration_summary <- time_duration_table %>%
+  group_by(group) %>%
+  summarise(mean_duration = mean(`Duration (in mins)`, na.rm = TRUE), 
+            sd_duration = sd(`Duration (in mins)`, na.rm = TRUE),
+            .groups = 'drop')
+```
+
+Plot the distribution of different groups
+```{r}
+# density plot
+ggplot(time_duration_table, aes(x = `Duration (in mins)`, fill = group)) +
+  geom_density(alpha = 0.3) +
+  # facet_wrap(~ group, scales = "free") +
+  labs(title = "Duration Density by Group",
+       x = "Duration",
+       y = "Density") +
+  theme_minimal()
+
+
+# histogram
+ggplot(time_duration_table, aes(x = `Duration (in mins)`)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~ group) +
+  labs(title = "Distribution of Duration by Group",
+       x = "Duration (e.g. in minutes)",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(time_duration_table$`Duration (in mins)`, na.rm = TRUE), by = 10)) +
+  theme_minimal()
+
+```
+
+
+Plot time duration bar chart. It's not valid as the data is not normal distribution.
+
+```{r}
+ggplot(time_duration_summary, aes(x = group, y = mean_duration)) +
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.6) +
+  geom_errorbar(aes(ymin = mean_duration - sd_duration, ymax = mean_duration + sd_duration), width = 0.2) +
+  labs(title = "Response Duration by Group",
+       y = "Duration (in minutes)",
+       x = "Group") +
+  theme_minimal()
+```
+
+## Q3.2 Age
+What is your age? <br> 
+Variable: continuous <br> 
+Method: kruskal-wallis test <br> 
+**Result: Fail to reject the null hypothesis**
+```{r}
+age_table <- rawdata_value[, c("Q3.2", "group")]
+age_table$`Q3.2` <- as.numeric(gsub("[^0-9.]", "", age_table$`Q3.2`))
+
+# test for normality
+# shapiro.test(age_table$`Q3.2`)
+# bartlett.test(`Q3.2` ~ group, data = age_table)
+
+
+# run the kruskal-wallis test
+kruskal_test <- kruskal.test(`Q3.2` ~ group, data = age_table)
+print(kruskal_test)
+
+age_summary <- age_table %>%
+  group_by(group) %>%
+  summarise(mean_age = mean(`Q3.2`, na.rm = TRUE), 
+            sd_age = sd(`Q3.2`, na.rm = TRUE),
+            .groups = 'drop')
+```
+
+## Q3.3 Gender
+Which of the following best describes your gender identity? <br> 
+Variable: categorical <br> 
+Method: contingency Table + chi-squared test <br> 
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_3_table <- rawdata_value[, c("Q3.3", "group")]
+# q3_3_table$Q3.3 <- recode(q3_3_table$Q3.3,
+#                                     "1" = "Male",
+#                                     "2" = "Female",
+#                                     .default = "Other")
+q3_3_contingency <- table(q3_3_table$Q3.3, q3_3_table$group)
+print(q3_3_contingency)
+
+# Chi-squared test
+chisq.test(q3_3_contingency)
+
+```
+
+Calculate the gender percentage
+
+```{r}
+# percentage of male
+male_per <- q3_3_contingency[1,]
+gender_group_total <- colSums(q3_3_contingency)
+male_prop <- male_per/gender_group_total
+
+```
+
+## Q3.4 Highest Education
+What is your highest level of education achieved?\
+Variable: categorical with written insights from choice 9
+Method: contingency Table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+
+```{r}
+q3_4_table <- rawdata_value[rawdata_value$`Q3.4` != "9", c("Q3.4", "group")]
+
+q3_4_contingency <- table(q3_4_table$Q3.4, q3_4_table$group)
+# Chi-squared test
+chisq.test(q3_4_contingency)
+
+```
+Highest Education Level proportion bar plot across different groups
+```{r}
+
+q3_4_prop  <- as.data.frame(q3_4_contingency)
+# rename columns
+names(q3_4_prop) <- c("Q3.4", "Group", "Count")
+
+# calculate proportions within each group
+q3_4_prop <- q3_4_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(q3_4_prop, aes(x = as.factor(`Q3.4`), y = Proportion, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  # facet_wrap(~ Group) +
+  labs(
+    title = "Q3.4 Highest Education Level Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+  # scale_x_discrete(labels = c(
+  #   "1" = "No formal education",
+  #   "2" = "Primary/Elementary",
+  #   "3" = "Secondary School (GCSE)",
+  #   "4" = "High School (A Level)",
+  #   "5" = "Technical or Vocational",
+  #   "6" = "Bachelors or equivalent degree level qualification",
+  #   "7" = "Masters or equivalent higher degree level qualification",
+  #   "8" = "PhD or equivalent doctoral level qualification"))+
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Plot pie chart including all participants
+```{r}
+q3_4_table <- rawdata_value[, c("Q3.4", "group")]
+
+# Q3.4 summary table
+q3_4_summary <- q3_4_table %>%
+  group_by(`Q3.4`) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count),
+         label = 
+            case_when(
+              Q3.4 == "1" ~ "1-No formal education",
+              Q3.4 == "2" ~ "2-Primary/Elementary",
+              Q3.4 == "3" ~ "3-Secondary School (GCSE)",
+              Q3.4 == "4" ~ "4-High School (A Level)",
+              Q3.4 == "5" ~ "5-Technical or Vocational",
+              Q3.4 == "6" ~ "6-Bachelors or equivalent degree level qualification",
+              Q3.4 == "7" ~ "7-Masters or equivalent higher degree level qualification",
+              Q3.4 == "8" ~ "8-PhD or equivalent doctoral level qualification",
+              Q3.4 == "9" ~ "9-Other"
+            ),
+         label = paste0(label, " (", round(proportion * 100, 2), " %)")
+         )
+
+ggplot(q3_4_summary, aes(x = "",y = proportion, fill = label)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.4 Highest Education Level Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+```
+
+
+
+## Q3.5 Employee Status
+What is your current profession or employment status?\
+Variable: categorical\
+Method: contingency Table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_5_table <- rawdata_value[rawdata_value$`Q3.5` != "6", c("Q3.5", "group")]
+q3_5_contingency <- table(q3_5_table$Q3.5, q3_5_table$group)
+# print(q3_5_contingency)
+
+# Chi-squared test
+chisq.test(q3_5_contingency)
+
+```
+
+Employee status proportion bar plot across different groups
+
+```{r}
+q3_5_prop  <- as.data.frame(q3_5_contingency)
+# rename columns
+names(q3_5_prop) <- c("Q3.5", "Group", "Count")
+
+
+# calculate proportions within each group
+q3_5_prop <- q3_5_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(q3_5_prop, aes(x = as.factor(`Q3.5`), y = Proportion, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  # facet_wrap(~ Group) +
+  labs(
+    title = "Q3.5 Employee Status Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+  scale_x_discrete(labels = c(
+    "1" = "Student",
+    "2" = "Employed",
+    "3" = "Self-employed",
+    "4" = "Retired",
+    "5" = "Unemployed"
+  )) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Plot pie chart including all participants
+```{r}
+q3_5_table <- rawdata_value[, c("Q3.5", "group")]
+q3_5_summary <- q3_5_table %>%
+  group_by(`Q3.5`) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count),
+         label = 
+            case_when(
+              Q3.5 == "1" ~ "1-Student",
+              Q3.5 == "2" ~ "2-Employed",
+              Q3.5 == "3" ~ "3-Self-employed",
+              Q3.5 == "4" ~ "4-Retired",
+              Q3.5 == "5" ~ "5-Unemployed",
+              Q3.5 == "6" ~ "6-Other"
+            ),
+         label = paste0(label, " (", round(proportion * 100, 2), " %)")
+         )
+ggplot(q3_5_summary, aes(x = "",y = proportion, fill = label)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.5 Employee Status Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+
+
+
+## Q3.6 Economics Education
+In which, if any, have you ever studied economics? (Select all that apply)\
+Variable: categorical\
+Method: convert to list and count + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+
+
+Plot percentage bar chart including all participants
+```{r}
+q3_6_table <- rawdata_value[, c("Q3.6", "group")]
+q3_6_table$Q3.6 <- lapply(q3_6_table$Q3.6, function(x) as.list(as.numeric(strsplit(x, ",")[[1]])))
+
+# count the number of occurrences of each value
+q3_6_summary <- q3_6_table %>%
+  unnest(Q3.6) %>%
+  group_by(`Q3.6`) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / total_respondents,
+         label = 
+            case_when(
+              Q3.6 == "1" ~ "1-At school",
+              Q3.6 == "2" ~ "2-In higher education",
+              Q3.6 == "3" ~ "3-Through self-directed study",
+              Q3.6 == "4" ~ "4-Self-motivated study",
+              Q3.6 == "5" ~ "5-Never studied economics",
+              Q3.6 == "6" ~ "6-Don’t know / can’t recall",
+              Q3.6 == "7" ~ "7-Other"
+            ))
+
+# q3_6_summary$Q3.6 <- as.numeric(q3_6_summary$Q3.6)
+ggplot(q3_6_summary, aes(x = factor(label), y = proportion)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
+            vjust = -0.3, size = 3.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Percentage of Participants Selecting Each Q3.6 Option",
+    x = "Response",
+    y = "Percentage of Participants"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+```{r}
+q3_6_table <- rawdata_value[, c("Q3.6", "group")]
+q3_6_table$Q3.6 <- lapply(q3_6_table$Q3.6, function(x) as.list(as.numeric(strsplit(x, ",")[[1]])))
+# count the number of occurrences of each value
+q3_6_prop <- q3_6_table %>%
+  unnest(Q3.6) %>%
+  group_by(group, Q3.6) %>%
+  summarise(count = n(), .groups = 'drop')
+q3_6_prop$Q3.6 <- as.numeric(q3_6_prop$Q3.6)
+
+# create a contingency table
+q3_6_contingency <- xtabs(count ~ Q3.6 + group, data = q3_6_prop)
+print(q3_6_contingency)
+
+# Chi-squared test
+chisq.test(q3_6_contingency)
+
+# q3_6_test <-q3_6_prop %>%
+#   group_by(`Q3.6`) %>%
+#   summarise(total_count = sum(count), .groups = "drop")
+
+```
+
+Economics Education proportion bar plot across different groups
+```{r}
+# convert contingency table to data frame # count 0 as well
+q3_6_prop <- as.data.frame(q3_6_contingency)
+# calculate proportions within each group
+q3_6_prop <- q3_6_prop %>%
+  left_join(group_total, by = "group") %>%
+  mutate(Proportion = Freq / n_respondents)
+
+ggplot(q3_6_prop, aes(x = factor(Q3.6), y = Proportion, fill = factor(group))) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Q3.6 Economics Education Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion",
+    fill = "Group"
+  ) +
+  scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()
+```
+
+
+
+## Q3.7 Financial Activities
+Which of the following financial activities do you actively participate in? (Select all that apply) - Selected Choice Fixed Income (e.g., government bonds, corporate bonds)\
+Variable: categorical\
+Method: convert to list and count + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_7_table <- rawdata_value[, c("Q3.7", "group")]
+q3_7_table$Q3.7 <- lapply(q3_7_table$Q3.7, function(x) as.list(as.numeric(strsplit(x, ",")[[1]])))
+# count the number of occurrences of each value in each group
+q3_7_prop <- q3_7_table %>%
+  unnest(Q3.7) %>%
+  group_by(group,`Q3.7`) %>%
+  summarise(count = n(), .groups = 'drop')
+q3_7_prop$Q3.7 <- as.numeric(q3_7_prop$Q3.7)
+
+# create a contingency table
+q3_7_contingency <- xtabs(count ~ `Q3.7` + group, data = q3_7_prop)
+print(q3_7_contingency)
+# Chi-squared test
+chisq.test(q3_7_contingency)
+
+```
+
+Plot financial activities proportion bar plot across different groups
+```{r}
+# convert contingency table to data frame
+q3_7_prop <- as.data.frame(q3_7_contingency) %>%
+  left_join(group_total, by = "group") %>%
+  mutate(Proportion = Freq / n_respondents)
+
+
+ggplot(q3_7_prop, aes(x = factor(`Q3.7`), y = Proportion, fill = factor(group))) + 
+  geom_col(position = "dodge") +
+  labs(
+    title = "Q3.7 Financial Activities Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion",
+    fill = "Group"
+  ) +
+    scale_x_discrete(labels = c(
+    "11" = "Savings",
+    "12" = "Investments",
+    "13" = "Fixed Income",
+    "14" = "Retirement Planning",
+    "15" = "Trading",
+    "16" = "Real Estate",
+    "17" = "Cryptocurrencies",
+    "18" = "None of the above",
+    "19" = "Other"
+      )) +
+  scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+Plot percentage bar chart including all participants
+```{r}
+q3_7_summary <-q3_7_prop %>%
+  group_by(`Q3.7`) %>%
+  summarise(total_count = sum(Freq), .groups = "drop") %>%
+  mutate(proportion = total_count / total_respondents,
+         label = 
+            case_when(
+              `Q3.7` == "11" ~ "11-Savings",
+              `Q3.7` == "12" ~ "12-Investments",
+              `Q3.7` == "13" ~ "13-Fixed Income",
+              `Q3.7` == "14" ~ "14-Retirement Planning",
+              `Q3.7` == "15" ~ "15-Trading",
+              `Q3.7` == "16" ~ "16-Real Estate",
+              `Q3.7` == "17" ~ "17-Cryptocurrencies",
+              `Q3.7` == "18" ~ "18-None of the above",
+              `Q3.7` == "19" ~ "19-Other"
+            ))
+
+ggplot(q3_7_summary, aes(x = factor(label), y = proportion)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
+            vjust = -0.3, size = 3.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Percentage of Participants Selecting Each Q3.7 Option",
+    x = "Response",
+    y = "Percentage of Participants"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+## Q3.8 Awareness of Economics
+How frequently, if at all, do you read/watch/listen to news stories related to economics or the economy?\
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_8_table <- rawdata_value[, c("Q3.8", "group")]
+
+q3_8_contingency <- table(q3_8_table$Q3.8, q3_8_table$group)
+print(q3_8_contingency)
+# Chi-squared test
+# chisq.test(q3_8_contingency)
+chisq.test(q3_8_contingency[-nrow(q3_8_contingency), ])
+
+```
+Awareness of Economics proportion bar plot across different groups
+```{r}
+q3_8_prop  <- as.data.frame(q3_8_contingency)
+# rename columns
+names(q3_8_prop) <- c("Q3.8", "Group", "Count")
+
+# add a labelled column
+q3_8_prop <- q3_8_prop %>%
+  mutate(Q3.8_label = case_when(
+    Q3.8 == "1" ~ "1-Never",
+    Q3.8 == "2" ~ "2-Rarely",
+    Q3.8 == "3" ~ "3-Monthly",
+    Q3.8 == "4" ~ "4-Weekly",
+    Q3.8 == "5" ~ "5-Almost daily",
+    Q3.8 == "6" ~ "6-Every day",
+    Q3.8 == "7" ~ "7-Not sure"
+  ))
+
+# calculate proportions within each group
+q3_8_prop <- q3_8_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(q3_8_prop, aes(x = as.factor(`Q3.8_label`), y = Proportion, fill = Group)) +
+  geom_col(position = "dodge") +
+  # facet_wrap(~ Group) +
+  labs(
+    title = "Q3.8 Awareness of Economics Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Plot pie chart including all participants
+```{r}
+q3_8_summary <- q3_8_prop %>%
+  group_by(`Q3.8_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+        `Q3.8_label` = paste0(`Q3.8_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_8_summary, aes(x = "",y = proportion, fill = `Q3.8_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.8 Awareness of Economics Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+## Q3.9 Inflation Knowledge
+To the best of your knowledge, which option most accurately describes what inflation is?\
+Definitive correct answer\
+Variable: categorical\
+Method: descriptive analysis\
+**Respondents were filtered based on whether if they can understand what inflation is.**\
+
+```{r}
+q3_9_table <- rawdata_q3_9[, c("Q3.9", "group")]
+q3_9_summary <- q3_9_table %>%
+  group_by(`Q3.9`) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+  ggplot(q3_9_summary, aes(x = "",y = proportion, fill = `Q3.9`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.9 Inflation Knowledge Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+```
+
+## Q3.11 Trust of Official Data
+How much do you trust official inflation forecasts (For instance, the forecasts released by the Bank of England)?\
+*ascending value + exclude 6- Unsure / no opinion*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: Fail to reject the null hypothesis**
+
+```{r}
+q3_11_table <- rawdata_value[rawdata_value$`Q3.11` != "6", c("Q3.11", "group")]
+q3_11_table$Q3.11 <- as.numeric(q3_11_table$`Q3.11`)
+# check normality --> Not normally distributed
+# shapiro.test(q3_11_table$Q3.11)
+# bartlett.test(`Q3.11` ~ group, data = q3_11_table)
+
+
+# run kruskal test
+kruskal_test <- kruskal.test(Q3.11 ~ group, data = q3_11_table)
+print(kruskal_test)
+
+q3_11_summary <- q3_11_table %>%
+  group_by(group) %>%
+  summarise(q3_11_mean = mean(as.numeric(Q3.11), na.rm = TRUE),
+            q3_11_sd = sd(as.numeric(Q3.11), na.rm = TRUE),
+            .groups = 'drop')
+
+# report quantile information
+summary(q3_11_table$Q3.11)
+
+
+
+```
+Plot the distribution of different groups
+```{r}
+# histogram including all participants
+ggplot(q3_11_table, aes(x = Q3.11)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Q3.11 Trust official inflation forecasts distribution",
+       x = "Q3.11",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(q3_11_table$Q3.11, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+
+# Grouped bar-style histogram
+ggplot(q3_11_table, aes(x = factor(Q3.11), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Q3.11 Trust official inflation forecasts distribution by group",
+    x = "Q3.11 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+ 
+
+
+## Q3.12 Frequency of Checking Current Inflation
+How often do you check the current value of inflation?
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.12))
+
+q3_12_table <- rawdata_value[, c("Q3.12", "group")]
+q3_12_contingency <- table(q3_12_table$Q3.12, q3_12_table$group)
+print(q3_12_contingency)
+# Chi-squared test
+chisq.test(q3_12_contingency)
+
+```
+Frequency of Checking Current Inflation proportion bar plot across different groups
+```{r}
+q3_12_prop  <- as.data.frame(q3_12_contingency)
+# rename columns
+names(q3_12_prop) <- c("Q3.12", "Group", "Count")
+
+# add a labelled column
+q3_12_prop <- q3_12_prop %>%
+  mutate(Q3.12_label = case_when(
+    Q3.12 == "1" ~ "1-Never",
+    Q3.12 == "2" ~ "2-Rarely",
+    Q3.12 == "3" ~ "3-Sometimes",
+    Q3.12 == "4" ~ "4-Often"
+  ))
+# calculate proportions within each group
+q3_12_prop <- q3_12_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(q3_12_prop, aes(x = as.factor(`Q3.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.12 Frequency of Checking Current Inflation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+```
+Plot pie chart including all participants
+```{r}
+q3_12_summary <- q3_12_prop %>%
+  group_by(`Q3.12_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.12_label` = paste0(`Q3.12_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_12_summary, aes(x = "",y = proportion, fill = `Q3.12_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.12 Frequency of Checking Current Inflation Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+
+## Q3.13 Source of Current Inflation
+Which source do you rely on to inform yourself about the current value of inflation?\
+Variable: categorical\
+Method: convert to list and count + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_13_table <- rawdata_value[, c("Q3.13", "group")]
+q3_13_table$Q3.13 <- lapply(q3_13_table$Q3.13, function(x) as.list(as.numeric(strsplit(x, ",")[[1]])))
+# count the number of occurrences of each value
+q3_13_prop <- q3_13_table %>%
+  unnest(Q3.13) %>%
+  group_by(group,`Q3.13`) %>%
+  summarise(count = n(), .groups = 'drop')
+q3_13_prop$Q3.13 <- as.numeric(q3_13_prop$Q3.13)
+# create a contingency table
+q3_13_contingency <- xtabs(count ~ `Q3.13` + group, data = q3_13_prop)
+print(q3_13_contingency)
+# Chi-squared test
+chisq.test(q3_13_contingency)
+```
+Plot source of current inflation proportion bar plot across different groups
+```{r}
+# convert contingency table to data frame
+q3_13_prop <- as.data.frame(q3_13_contingency) %>%
+  left_join(group_total, by = "group") %>%
+  mutate(Proportion = Freq / n_respondents)
+
+# add a labelled column
+q3_13_prop <- q3_13_prop %>%
+  mutate(Q3.13_label = case_when(
+    `Q3.13` == "1" ~ "1-Television, radio or print media",
+    `Q3.13` == "2" ~ "2-Social media",
+    `Q3.13` == "3" ~ "3-Official websites or data releases",
+    `Q3.13` == "4" ~ "4-Content platform",
+    `Q3.13` == "5" ~ "5-Actively search on search engines",
+    `Q3.13` == "6" ~ "6-Family or friends",
+    `Q3.13` == "7" ~ "7-Financial advice websites/forums",
+    `Q3.13` == "8" ~ "8-Private banks or economic research institutes",
+    `Q3.13` == "9" ~ "9-Other"
+  ))
+ggplot(q3_13_prop, aes(x = factor(`Q3.13_label`), y = Proportion, fill = group)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Q3.13 Source of Current Inflation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion",
+    fill = "Group"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+Plot percentage bar chart including all participants
+```{r}
+q3_13_summary <- q3_13_prop %>%
+  group_by(`Q3.13_label`) %>%
+  summarise(total_count = sum(Freq), .groups = "drop") %>%
+  mutate(proportion = total_count / total_respondents)
+
+ggplot(q3_13_summary, aes(x = factor(Q3.13_label), y = proportion)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
+            vjust = -0.3, size = 3.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Percentage of Participants Selecting Each Q3.13 Option",
+    x = "Response",
+    y = "Percentage of Participants"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Q3.14 Impact of Current Inflation
+To what extent do you feel that the current value of inflation is impacting your personal finances?
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.14))
+q3_14_table <- rawdata_value[, c("Q3.14", "group")]
+q3_14_contingency <- table(q3_14_table$Q3.14, q3_14_table$group)
+print(q3_14_contingency)
+# Chi-squared test
+chisq.test(q3_14_contingency)
+
+```
+Impact of Current Inflation proportion bar plot across different groups
+```{r}
+q3_14_prop  <- as.data.frame(q3_14_contingency)
+# rename columns
+names(q3_14_prop) <- c("Q3.14", "Group", "Count")
+# add a labelled column
+q3_14_prop <- q3_14_prop %>%
+  mutate(Q3.14_label = case_when(
+    Q3.14 == "1" ~ "1-Not at all",
+    Q3.14 == "2" ~ "2-Slightly",
+    Q3.14 == "3" ~ "3-Moderately",
+    Q3.14 == "4" ~ "4-Very significantly"
+  ))
+# calculate proportions within each group
+q3_14_prop <- q3_14_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(q3_14_prop, aes(x = as.factor(`Q3.14_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.14 Impact of Current Inflation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+Plot pie chart including all participants
+```{r}
+q3_14_summary <- q3_14_prop %>%
+  group_by(`Q3.14_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+        `Q3.14_label` = paste0(`Q3.14_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_14_summary, aes(x = "",y = proportion, fill = `Q3.14_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.14 Impact of Current Inflation Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+## Q3.15 Response to Current Inflation
+How much do you adjust or take action in response to the change in current value of inflation?\
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.15))
+q3_15_table <- rawdata_value[, c("Q3.15", "group")]
+q3_15_contingency <- table(q3_15_table$Q3.15, q3_15_table$group)
+print(q3_15_contingency)
+# Chi-squared test
+chisq.test(q3_15_contingency)
+
+```
+Response to Current Inflation proportion bar plot across different groups
+```{r}
+q3_15_prop  <- as.data.frame(q3_15_contingency)
+# rename columns
+names(q3_15_prop) <- c("Q3.15", "Group", "Count")
+# add a labelled column
+q3_15_prop <- q3_15_prop %>%
+  mutate(Q3.15_label = case_when(
+    Q3.15 == "1" ~ "1-Not at all",
+    Q3.15 == "2" ~ "2-Rarely",
+    Q3.15 == "3" ~ "3-Somewhat actively",
+    Q3.15 == "4" ~ "4-Very actively"
+  ))
+# calculate proportions within each group
+q3_15_prop <- q3_15_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(q3_15_prop, aes(x = as.factor(`Q3.15_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.15 Response to Current Inflation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+q3_15_summary <- q3_15_prop %>%
+  group_by(`Q3.15_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.15_graph_label` = paste0(`Q3.15_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_15_summary, aes(x = "",y = proportion, fill = `Q3.15_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.15 Response to Current Inflation Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+```
+
+## Q3.16 Frequency of Checking Inflation Forecasts
+How often do you look at inflation forecasts (that is, information about future inflation)?\
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.16))
+
+q3_16_table <- rawdata_value[, c("Q3.16", "group")]
+q3_16_contingency <- table(q3_16_table$Q3.16, q3_16_table$group)
+print(q3_16_contingency)
+# Chi-squared test
+chisq.test(q3_16_contingency)
+
+```
+Frequency of Checking Inflation Forecasts proportion bar plot across different groups
+```{r}
+q3_16_prop  <- as.data.frame(q3_16_contingency)
+# rename columns
+names(q3_16_prop) <- c("Q3.16", "Group", "Count")
+# add a labelled column
+q3_16_prop <- q3_16_prop %>%
+  mutate(Q3.16_label = case_when(
+    Q3.16 == "1" ~ "1-Never",
+    Q3.16 == "2" ~ "2-Rarely",
+    Q3.16 == "3" ~ "3-Sometimes",
+    Q3.16 == "4" ~ "4-Often"
+  ))
+# calculate proportions within each group
+q3_16_prop <- q3_16_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(q3_16_prop, aes(x = as.factor(`Q3.16_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.16 Frequency of Checking Inflation Forecasts Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+q3_16_summary <- q3_16_prop %>%
+  group_by(`Q3.16_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.16_label` = paste0(`Q3.16_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_16_summary, aes(x = "",y = proportion, fill = `Q3.16_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.16 Frequency of Checking Inflation Forecasts Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+## Q3.17 Source of Inflation Forecasts
+Which source do you rely on to obtain inflation forecasts (information about future inflation)?\
+Variable: categorical\
+Method: convert to list and count + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+q3_17_table <- rawdata_value[, c("Q3.17", "group")]
+q3_17_table$Q3.17 <- lapply(q3_17_table$Q3.17, function(x) as.list(as.numeric(strsplit(x, ",")[[1]])))
+# count the number of occurrences of each value
+q3_17_prop <- q3_17_table %>%
+  unnest(Q3.17) %>%
+  group_by(group,`Q3.17`) %>%
+  summarise(count = n(), .groups = 'drop')
+q3_17_prop$Q3.17 <- as.numeric(q3_17_prop$Q3.17)
+# create a contingency table
+q3_17_contingency <- xtabs(count ~ `Q3.17` + group, data = q3_17_prop)
+print(q3_17_contingency)
+# Chi-squared test
+chisq.test(q3_17_contingency)
+```
+Plot source of inflation forecasts proportion bar plot across different groups
+```{r}
+# convert contingency table to data frame
+q3_17_prop <- as.data.frame(q3_17_contingency) %>%
+  left_join(group_total, by = "group") %>%
+  mutate(Proportion = Freq / n_respondents)
+# add a labelled column
+q3_17_prop <- q3_17_prop %>%
+  mutate(Q3.17_label = case_when(
+    `Q3.17` == "1" ~ "1-Television, radio or print media",
+    `Q3.17` == "2" ~ "2-Social media",
+    `Q3.17` == "3" ~ "3-Official websites or data releases",
+    `Q3.17` == "4" ~ "4-Content platform",
+    `Q3.17` == "5" ~ "5-Actively search on search engines",
+    `Q3.17` == "6" ~ "6-Family or friends",
+    `Q3.17` == "7" ~ "7-Financial advice websites/forums",
+    `Q3.17` == "8" ~ "8-Private banks or economic research institutes",
+    `Q3.17` == "9" ~ "9-Other"
+  ))
+ggplot(q3_17_prop, aes(x = factor(`Q3.17_label`), y = Proportion, fill = group)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Q3.17 Source of Inflation Forecasts Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion",
+    fill = "Group"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot percentage bar chart including all participants
+```{r}
+q3_17_summary <- q3_17_prop %>%
+  group_by(`Q3.17_label`) %>%
+  summarise(total_count = sum(Freq), .groups = "drop") %>%
+  mutate(proportion = total_count / total_respondents)
+ggplot(q3_17_summary, aes(x = factor(Q3.17_label), y = proportion)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
+            vjust = -0.3, size = 3.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Percentage of Participants Selecting Each Q3.17 Option",
+    x = "Response",
+    y = "Percentage of Participants"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Q3.18 Impact of Inflation Forecasts
+To what extent do you feel that inflation forecasts (information about future inflation) impact your personal finances?\
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.18))
+q3_18_table <- rawdata_value[, c("Q3.18", "group")]
+q3_18_contingency <- table(q3_18_table$Q3.18, q3_18_table$group)
+print(q3_18_contingency)
+# Chi-squared test
+chisq.test(q3_18_contingency)
+```
+Impact of Inflation Forecasts proportion bar plot across different groups
+```{r}
+q3_18_prop  <- as.data.frame(q3_18_contingency)
+# rename columns
+names(q3_18_prop) <- c("Q3.18", "Group", "Count")
+# add a labelled column
+q3_18_prop <- q3_18_prop %>%
+  mutate(Q3.18_label = case_when(
+    Q3.18 == "1" ~ "1-Not at all",
+    Q3.18 == "2" ~ "2-Slightly",
+    Q3.18 == "3" ~ "3-Moderately",
+    Q3.18 == "4" ~ "4-Very significantly"
+  ))
+# calculate proportions within each group
+q3_18_prop <- q3_18_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(q3_18_prop, aes(x = as.factor(`Q3.18_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.18 Impact of Inflation Forecasts Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+Plot pie chart including all participants
+```{r}
+q3_18_summary <- q3_18_prop %>%
+  group_by(`Q3.18_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.18_label` = paste0(`Q3.18_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_18_summary, aes(x = "",y = proportion, fill = `Q3.18_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.18 Impact of Inflation Forecasts Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+## Q3.19 Response to Inflation Forecasts
+How much do you adjust or take action in response to inflation forecasts (information about future inflation)?\
+Variable: categorical\
+Method: contingency table + chi-squared test\
+**Result: Fail to reject the null hypothesis**
+```{r}
+# Initial Check
+summary(as.numeric(rawdata_value$Q3.19))
+q3_19_table <- rawdata_value[, c("Q3.19", "group")]
+q3_19_contingency <- table(q3_19_table$Q3.19, q3_19_table$group)
+print(q3_19_contingency)
+# Chi-squared test
+chisq.test(q3_19_contingency)
+```
+Response to Inflation Forecasts proportion bar plot across different groups
+```{r}
+q3_19_prop  <- as.data.frame(q3_19_contingency)
+# rename columns
+names(q3_19_prop) <- c("Q3.19", "Group", "Count")
+# add a labelled column
+q3_19_prop <- q3_19_prop %>%
+  mutate(Q3.19_label = case_when(
+    Q3.19 == "1" ~ "1-Not at all",
+    Q3.19 == "2" ~ "2-Rarely",
+    Q3.19 == "3" ~ "3-Somewhat actively",
+    Q3.19 == "4" ~ "4-Very actively"
+  ))
+# calculate proportions within each group
+q3_19_prop <- q3_19_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(q3_19_prop, aes(x = as.factor(`Q3.19_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.19 Response to Inflation Forecasts Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+q3_19_summary <- q3_19_prop %>%
+  group_by(`Q3.19_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.19_graph_label` = paste0(`Q3.19_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(q3_19_summary, aes(x = "",y = proportion, fill = `Q3.19_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.19 Response to Inflation Forecasts Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+
+
+
+# Actual Survey Analysis <a name="actual-survey-analysis"></a>
+
+## ! Qxx.2 Graph Familarity
+Have you ever been communicated this type of information before?\
+Variable: categorical\
+Method: Contingency Table + Chi-squared test\
+*recode to yes and no*\
+**Result: Fail to reject the null hypothesis**
+
+```{r}
+# combine data from different groups
+survey_q2 <- data.frame()
+survey_q2_list <- list("Q4.2","Q6.2", "Q8.2", "Q10.2", "Q12.2")
+
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q2_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q2_value", "group")
+  survey_q2 <- rbind(survey_q2, temp_table)
+}
+
+# recode the category
+survey_q2 <- survey_q2 %>%
+  mutate(q2_recode = case_when(
+    q2_value %in% c("1", "2") ~ "N",
+    q2_value %in% c("3", "4") ~ "Y"
+  ))
+
+survey_q2_contingency <- table(survey_q2$q2_recode, survey_q2$group)
+# print the contingency table
+print(survey_q2_contingency)
+# Chi-squared test
+chisq.test(survey_q2_contingency)
+
+# chisq_result <- chisq.test(survey_q2_contingency)
+# chisq_result$stdres  
+# chisq_result$expected #(If many values are < 5, your Chi-squared test may be less reliable.)
+# Post-hoc test for N --> no single pairwise difference is strong
+# pairwise.prop.test(
+#   x = survey_q2_contingency["N", ],
+#   n = colSums(survey_q2_contingency),
+#   p.adjust.method = "holm"
+# )
+
+```
+
+Summary Table of proportion of yes and no
+
+```{r}
+yes_per <- survey_q2_contingency[2,]
+no_per <- survey_q2_contingency[1,]
+familarity_group_total <- colSums(survey_q2_contingency)
+yes_prop <- yes_per/familarity_group_total
+no_prop <- no_per/familarity_group_total
+# convert to data frame
+survey_q2_summary <-data.frame(yes_prop, no_prop)
+
+```
+
+Plot the graph
+
+```{r}
+ggplot(survey_q2, aes(x = q2_recode, fill = group)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Have you ever been communicated this type of information before?",
+       x = "Response",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal()
+```
+
+## Qxx.3 Prior Expectation
+Does the inflation forecast information provided align with your expectations?\
+Variable: categorical\
+Method: Contingency Table + Chi-squared test\
+**Result: ???**
+```{r}
+# combine data from different groups
+survey_q3 <- data.frame()
+survey_q3_list <- list("Q4.3","Q6.3", "Q8.3", "Q10.3", "Q12.3")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q3_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q3_value", "group")
+  survey_q3 <- rbind(survey_q3, temp_table)
+}
+
+```
+
+
+## Qxx.6 Probability of exactly 2.6%
+what do you think is the probability of inflation being exactly 2.6%?\
+Definitive Correct Answer\
+*descending order*\
+Method: contingency table + proportion test\
+**Result: Fail to reject the null hypothesis**
+<font color="red">Is there any other test? maybe there is just no differences..</font>\
+```{r}
+# combine data from different groups
+survey_q6 <- data.frame()
+survey_q6_list <- list("Q4.6","Q6.6", "Q8.6", "Q10.6", "Q12.6")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q6_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q6_value", "group")
+  survey_q6 <- rbind(survey_q6, temp_table)
+}
+
+# run annova test--> still no significant differences
+# anova_test <- aov(q6_value ~ group, data = survey_q6)
+# summary(anova_test)
+
+
+# run Kruskal-Wallis test--> still no significant differences
+kruskal_test <- kruskal.test(q6_value ~ group, data = survey_q6)
+print(kruskal_test)
+
+# force order
+# survey_q6$group <- factor(survey_q6$group, levels = c("controlled", "errorbar", "shadedbar", "fanchartslice", "bellcurve"))
+
+survey_q6_contingency <- table(survey_q6$q6_value, survey_q6$group)
+# whether one proportion differs across groups
+less_than_1_per <- survey_q6_contingency[7,]
+survey_q6_group_total <- colSums(survey_q6_contingency)
+prop.test(less_than_1_per, survey_q6_group_total)
+
+```
+
+ 
+  
+   
+
+
+
+
+## Qxx.7 Probability of between 1.9% and 3.3%
+what do you think is the probability of inflation being between 1.9% and 3.3%?\
+Definitive Correct Answer\
+*descending order*\
+Method: contingency table + proportion test\
+**Result: <font color='red'> See if there is difference across groups??</font>**\
+
+## Qxx.8 Probability of between 3.3% and 5.6%
+what do you think is the probability of inflation being between 3.3% and 5.6%?\
+Definitive Correct Answer\
+*descending order*\
+Method: contingency table + proportion test\
+**Result: <font color='red'> See if there is difference across groups??</font>**\
+
+
+
+
+
+
+
+
+# Statistical Testing <a name="statistical-testing"></a>
+## Basics
+Type I error- false positives (saying there's a difference when there isn't)
+## Chi-squared test
+### Post-hoc test
+1. Standardized residuals
+```{r}
+chisq_result <- chisq.test(q3_4_contingency)
+std_resid <- chisq_result$stdres
+```
+Cells with absolute value > ~2 (or > 1.96 for 95% confidence)indicate  contributing most to the overall chi-squared\
+
+2. Pairwise proportion tests:
+```{r}
+pairwise.prop.test(
+  x = q3_4_contingency[, 1:ncol(q3_4_contingency)],  # counts per group
+  n = colSums(q3_4_contingency),                     # total per group
+  p.adjust.method = "bonferroni"                     # or "holm", "BH"
+)
+```
+
+
+## ANOVA test
+ANOVA only compares the means of the groups.\
+### Assumptions of ANOVA
+1. Normality of residuals within each group
+```{r}
+shapiro.test(df$value)
+```
+
+2. Homogeneity of variances across groups
+```{r}
+# Check the assumption of equal variances (homogeneity of variance) across groups 
+# If p< 0.05, we can reject the null hypothesis of equal variances, meaning the variances are significantly different across groups
+bartlett.test(`Q3.2` ~ group, data = age_table) # if data is normally distributed
+# Levene's test for homogeneity of variance if data may not be normally distributed
+library(car)
+leveneTest(value ~ group, data = time_duration_table)
+```
+### Post-hoc test
+If ANOVA is significant, we can perform post-hoc tests to determine which groups are significantly different from each other.\
+```{r}
+# post-hoc test
+tukey_test <- TukeyHSD(anova_test)
+print(tukey_test)
+
+```
+
+> Null hypothesis (H₀): All group means are equal\
+> Alternative hypothesis (H₁): At least one group mean is different
+
+## Kruskal-Wallis test
+(non-parametric test)\
+when the dependent variable is continuous or ordinal\
+when the assumptions of one-way ANOVA are not met: normality and equal variances
+
+e.g., Likert-scale responses (ordinal) 
+### Post-hoc test
+```{r}
+library(FSA)
+
+dunnTest(value ~ group, data = df, method = "bonferroni")
+# 
+```
+
+## Propotion test -prop.test()
+- prop.test(): at least one group differs
+- pairwise.prop.test():  identifying which specific pairs of groups differ significantly in their proportions, choose the p.adjust.method = "holm" or "bonferroni" or "BH"

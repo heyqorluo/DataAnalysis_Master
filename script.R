@@ -16,6 +16,7 @@ rawdata_value <- rawdata_value[3:nrow(rawdata_value), ]
 #     !is.na(Q10.2) ~ 4,
 #     !is.na(Q12.2) ~ 5
 #   ))
+
 rawdata_value <- rawdata_value %>%
   mutate(group = case_when(
     !is.na(Q4.2)  ~ 'controlled',
@@ -69,8 +70,7 @@ data_summary <- data.frame(
 )
 
 
-q3_11_values <- c()
-q3_11_groups <- c()
+
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   group_name <- names(group_list)[i]
@@ -93,27 +93,37 @@ for (i in seq_along(group_list)) {
   q3_11 <- as.numeric(df$`Q3.11`[df$`Q3.11` !="6"])
   data_summary$prior_trust_mean[i]<-mean(q3_11,na.rm = TRUE)
   data_summary$prior_trust_SD[i]<-sd(q3_11,na.rm = TRUE)
-  # append the values and group names to the vectors
-  q3_11_values <- c(q3_11_values, q3_11)
-  q3_11_groups <- c(q3_11_groups, rep(group_name, length(q3_11)))
   
   data_summary$prior_trust_6[i]<-sum(df$`Q3.11` == "6", na.rm = TRUE)
 }
 
-q3_11_anova <- data.frame(
-  value = q3_11_values,
-  group = factor(q3_11_groups))
-anova_result <- aov(value ~ group, data = q3_11_anova)
-summary(anova_result)
-
-q3_11_mean_summary <-q3_11_anova %>%
-  group_by(group) %>%
-  summarise(mean_value = mean(value, na.rm = TRUE))
 
 # alternative way to run anova (EXCLUDE 6)
 q3_11_table <- rawdata_value[rawdata_value$`Q3.11` != "6", c("Q3.11", "group")]
 anova_test <- aov(Q3.11 ~ group, data = q3_11_table)
 summary(anova_test)
+
+
+q3_11_mean <- q3_11_table %>%
+  group_by(group) %>%
+  summarise(q3_11_mean_value = mean(as.numeric(Q3.11), na.rm = TRUE), .groups = 'drop')
+
+# time duration ANOVA
+time_duration_table <- rawdata_value[,c("Duration (in seconds)", "group")]
+time_duration_table$`Duration (in seconds)` <- as.numeric(time_duration_table$`Duration (in seconds)`)/60
+anova_test <- aov(`Duration (in seconds)` ~ group, data = time_duration_table)
+summary(anova_test)
+# post-hoc test
+tukey_test <- TukeyHSD(anova_test)
+# print(tukey_test)
+
+time_duration_summary <- time_duration_table %>%
+  group_by(group) %>%
+  summarise(mean_duration = mean(`Duration (in seconds)`, na.rm = TRUE), 
+            sd_duration = sd(`Duration (in seconds)`, na.rm = TRUE),
+            .groups = 'drop')
+
+
 
 # checking cleaned data
 # totaleducation <- rawdata_value$`Q3.4`
@@ -122,52 +132,141 @@ summary(anova_test)
 
 
 # Q3.5 Employee Status
-q3_5_table <- NULL  
-for (i in seq_along(group_list)) {
-  df <- group_list[[i]]
-  group_name <- names(group_list)[i]
-  temp_table <- df %>%
-  group_by(`Q3.5`) %>%
-  summarise(!!group_name := n(), .groups = "drop")
-  # mutate(proportion = count_2 / sum(count_2))
-  
-  if (is.null(q3_5_table)) {
-    q3_5_table <- temp_table  # First group initializes the table
-  } else {
-    q3_5_table <- full_join(q3_5_table, temp_table, by = "Q3.5")
-  }
-}
-# convert to long format for plotting
-q3_5_long <- q3_5_table %>%
-  pivot_longer(cols = -`Q3.5`, names_to = "Group", values_to = "Count")
-
-# calculate proportion within each group
-q3_5_long <- q3_5_long %>%
-  complete(`Q3.5`, Group, fill = list(Count = 0))
-q3_5_prop <- q3_5_long %>%
-  group_by(Group) %>% # make sure it is the percentage of each group
-  mutate(Proportion = Count / sum(Count)) %>%
-  ungroup()
-
-
 # alternative way of Q3.5
 q3_5_table <- rawdata_value[, c("Q3.5", "group")]
 q3_5_contingency <- table(q3_5_table$Q3.5, q3_5_table$group)
-print(q3_5_contingency)
+# print(q3_5_contingency)
 # Chi-squared test
 chisq.test(q3_5_contingency)
-prop_df  <- as.data.frame(q3_5_contingency)
+q3_5_prop  <- as.data.frame(q3_5_contingency)
 # rename columns
-names(prop_df) <- c("Q3.5", "Group", "Count")
+names(q3_5_prop) <- c("Q3.5", "Group", "Count")
 # calculate proportions within each group
-prop_df <- prop_df %>%
+q3_5_prop <- q3_5_prop %>%
   group_by(Group) %>%
   mutate(Proportion = Count / sum(Count))
 
 
+
+
+# Actual Survey
+# ==============================================================================
+# ==============================================================================
+# categorical
+# Qxx.2
+# Have you ever been communicated this type of information before?
+survey_q2 <- data.frame()
+survey_q2_list <- list("Q4.2","Q6.2", "Q8.2", "Q10.2", "Q12.2")
+
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q2_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q2_value", "group")
+  survey_q2 <- rbind(survey_q2, temp_table)
+}
+
+# recode the category
+survey_q2 <- survey_q2 %>%
+  mutate(q2_recode = recode(q2_value,
+                            "1" = "n",
+                            "2" = "n",
+                            "3" = "y",
+                            "4" = "y"))
+
+survey_q2_contingency <- table(survey_q2$q2_recode, survey_q2$group)
+
+ggplot(survey_q2, aes(x = q2_recode, fill = group)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Have you ever been communicated this type of information before?",
+       x = "Response",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal()
+
+
+# chi-squared test
+chisq.test(survey_q2_contingency)
+# chisq_result <- chisq.test(survey_q2_contingency)
+# chisq_result$stdres
+# chisq_result$expected
+
+# ==============================================================================
+# definitive correct answer
+# responses in descending order 
+# Qxx.6
+# what do you think is the probability of inflation being exactly 2.6%?
+survey_q6 <- data.frame()
+survey_q6_list <- list("Q4.6","Q6.6", "Q8.6", "Q10.6", "Q12.6")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q6_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q6_value", "group")
+  survey_q6 <- rbind(survey_q6, temp_table)
+}
+# force order
+# survey_q6$group <- factor(survey_q6$group, levels = c("controlled", "errorbar", "shadedbar", "fanchartslice", "bellcurve"))
+
+survey_q6_contingency <- table(survey_q6$q6_value, survey_q6$group)
+# whether one proportion differs across groups
+less_than_1_per <- survey_q6_contingency[7,]
+survey_q6_group_total <- colSums(survey_q6_contingency)
+prop.test(less_than_1_per, survey_q6_group_total)
+
+# ==============================================================================
+# definitive correct answer
+# Qxx.14
+# what do you think is  the probability of inflation exceeding 2%?
+survey_q14 <- data.frame()
+survey_q14_list <- list("Q4.14","Q6.14", "Q8.14", "Q10.14", "Q12.14")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q14_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q14_value", "group")
+  survey_q14 <- rbind(survey_q14, temp_table)
+}
+
+survey_q14_contingency <- table(survey_q14$q14_value, survey_q14$group)
+chisq.test(survey_q14_contingency)
+
+# whether one proportion differs across groups
+around_60_per <- survey_q14_contingency[3,]
+survey_q14_group_total <- colSums(survey_q14_contingency)
+prop.test(around_60_per, survey_q14_group_total)
+pairwise.prop.test(x = around_60_per, 
+                   n = survey_q14_group_total,
+                   p.adjust.method = "none") #?? different correction method!
+#"holm" or "BH" or "bonferroni"
+
+
+
+
+# ==============================================================================
+# likert-scale - mean
+# Qxx.17_1
+# How likely do you think it is that the inflation will be exactly 2.6%?
+survey_q17 <- data.frame()
+survey_q17_list <- list("Q4.17_1","Q6.17_1", "Q8.17_1", "Q10.17_1", "Q12.17_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q17_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q17_value", "group")
+  survey_q17 <- rbind(survey_q17, temp_table)
+}
+survey_q17$q17_value <- as.numeric(survey_q17$q17_value)-8
+# run annova
+anova_test <- aov(q17_value ~ group, data = survey_q17)
+summary(anova_test)
+
+
+# ==============================================================================
 # q3.5 employee status plot
 ggplot(q3_5_prop, aes(x = as.factor(`Q3.5`), y = Proportion, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge") +
+  # facet_wrap(~ Group) +
   labs(
     title = "Employee Status",
     x = "Q3.5 Response",
@@ -191,6 +290,14 @@ ggplot(data_summary, aes(x = Group, y = Duration_mean)) +
   geom_bar(stat = "identity", fill = "steelblue", width = 0.6) +
   geom_errorbar(aes(ymin = Duration_mean - Duration_SD, ymax = Duration_mean + Duration_SD), width = 0.2) +
   labs(title = "Duration by Group",
+       y = "Duration (in minutes)",
+       x = "Group") +
+  theme_minimal()
+
+ggplot(time_duration_summary, aes(x = group, y = mean_duration)) +
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.6) +
+  geom_errorbar(aes(ymin = mean_duration - sd_duration, ymax = mean_duration + sd_duration), width = 0.2) +
+  labs(title = "Duration by Group-alternative approach",
        y = "Duration (in minutes)",
        x = "Group") +
   theme_minimal()
