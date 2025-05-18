@@ -1,14 +1,18 @@
 ---
 title: "Nora Master Project Data Analysis Notebook"
 author: "Nora Luo"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 # Table of Contents
 1. [Notation](#notation)
 2. [Load and split the data](#load-and-split-the-data)
 3. [Screening Questions](#screening-questions)
 4. [Actual Survey Analysis](#actual-survey-analysis)
-5. [Statistical Testing](#statistical-testing)\
+5. [Statistical Testing](#statistical-testing)
+6. [Skewed Data](#skewed-data)
+7. [Decision-making](#decision-making)
 
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
@@ -44,7 +48,7 @@ library(car)
 
 
 
-exported_data <- read_csv("rawdata_value.csv")
+exported_data <- read_csv("final_rawdata_value_1605.csv")
 exported_data <- subset(exported_data, select = -c(StartDate,EndDate,Status,IPAddress,Progress,Finished,RecordedDate, RecipientLastName,RecipientFirstName,                                  RecipientEmail,ExternalReference,LocationLatitude,LocationLongitude,DistributionChannel,UserLanguage))
 rawdata_value <- subset(exported_data, select =-c(ResponseId,Q1.1,Q2.1))
 rawdata_value <- rawdata_value[3:nrow(rawdata_value), ]
@@ -75,9 +79,25 @@ rawdata_value <- rawdata_value[rawdata_value$Q3.9 == "4", ]
 # meta-data
 total_respondents <- nrow(rawdata_value)
 
+
 group_total <- rawdata_value %>%
   group_by(group) %>%
   summarise(n_respondents = n())
+
+total_treatment_respodents <- total_respondents - group_total$n_respondents[1]
+  
+  
+# graph preparation
+
+likelihood_labels = c(
+    "9" = "Exceptionally unlikely",
+    "10" = "Very unlikely",
+    "11" = "Quite unlikely",
+    "12" = "Fifty-fifty",
+    "13" = "Quite likely",
+    "14" = "Very likely",
+    "15" = "Virtually certain"
+  )
 
 # filter treatment groups
 controlled_group <- rawdata_value[!is.na(rawdata_value$Q4.2), ]
@@ -109,6 +129,8 @@ group_list <- list(
   fanchartslice = fanchart_slice,
   bellcurve = bell_curve
 )
+
+skewed_group_list <- group_list[-1]
 
 ```
 
@@ -687,7 +709,7 @@ q3_9_summary <- q3_9_table %>%
 
 ## Q3.11 Trust of Official Data
 How much do you trust official inflation forecasts (For instance, the forecasts released by the Bank of England)?\
-*ascending value + exclude 6- Unsure / no opinion*\
+*ascending value-increasing trust + exclude 6- Unsure / no opinion*\
 Variable: treat as continuous\
 Method: Kruskal-Wallis test\
 **Result: Fail to reject the null hypothesis**
@@ -1262,6 +1284,7 @@ ggplot(q3_19_summary, aes(x = "",y = proportion, fill = `Q3.19_graph_label`)) +
 
 
 
+
 # Actual Survey Analysis <a name="actual-survey-analysis"></a>
 
 ## ! Qxx.2 Graph Familarity
@@ -1269,8 +1292,7 @@ Have you ever been communicated this type of information before?\
 Variable: categorical\
 Method: Contingency Table + Chi-squared test\
 *recode to yes and no*\
-**Result: Fail to reject the null hypothesis**
-
+**Result: We can reject the null hypothesis, meaning people are more or less familiar with certain type of visualisations.**
 ```{r}
 # combine data from different groups
 survey_q2 <- data.frame()
@@ -1338,7 +1360,7 @@ ggplot(survey_q2, aes(x = q2_recode, fill = group)) +
 Does the inflation forecast information provided align with your expectations?\
 Variable: categorical\
 Method: Contingency Table + Chi-squared test\
-**Result: ???**
+**Result: Fail to reject the null hypothesis**
 ```{r}
 # combine data from different groups
 survey_q3 <- data.frame()
@@ -1351,16 +1373,135 @@ for (i in seq_along(group_list)) {
   survey_q3 <- rbind(survey_q3, temp_table)
 }
 
+# Initial Check
+summary(as.numeric(survey_q3$q3_value))
 ```
+Test the differences between groups
+```{r}
+survey_q3_contingency <- table(survey_q3$q3_value, survey_q3$group)
+# print the contingency table
+print(survey_q3_contingency)
+# Chi-squared test
+chisq.test(survey_q3_contingency)
+```
+Plot prior expectation proportion bar plot across different groups
+```{r}
+survey_q3_prop  <- as.data.frame(survey_q3_contingency)
+# rename columns
+names(survey_q3_prop) <- c("Q3.3", "Group", "Count")
+# add a labelled column
+survey_q3_prop <- survey_q3_prop %>%
+  mutate(Q3.3_label = case_when(
+    Q3.3 == "1" ~ "1-Strongly aligns",
+    Q3.3 == "2" ~ "2-Somewhat aligns",
+    Q3.3 == "3" ~ "3-Neutral",
+    Q3.3 == "4" ~ "4-Somewhat does not align",
+    Q3.3 == "5" ~ "5-Does not align at all",
+  ))
+# calculate proportions within each group
+survey_q3_prop <- survey_q3_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q3_prop, aes(x = as.factor(`Q3.3_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q3.3 Prior Expectation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+survey_q3_summary <- survey_q3_prop %>%
+  group_by(`Q3.3_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q3.3_graph_label` = paste0(`Q3.3_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(survey_q3_summary, aes(x = "",y = proportion, fill = `Q3.3_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q3.3 Prior Expectation Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+## Qxx.4 Confliction with Prior Expectation
+How does the inflation forecast conflict with your expectations?\
+Variable: categorical\
+Method: calculate total number of people who think the forecast is not aligned with their expectation\
+**Result: Among people who think the forecast is not aligned with their expectation, 90% percent of respondents thinks the forecast is lower than what they expected.**
+```{r}
+# Check the number of people answered this question
+n_not_align <- sum(survey_q3_summary$total_count[4:5])
+# Combine data from different groups
+survey_q4 <- data.frame()
+survey_q4_list <- list("Q4.4","Q6.4", "Q8.4", "Q10.4", "Q12.4")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q4_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q4_value", "group")
+  survey_q4 <- rbind(survey_q4, temp_table)
+}
+survey_q4 <- survey_q4[!is.na(survey_q4$q4_value), ]
+survey_q4_contingency <- table(survey_q4$q4_value, survey_q4$group)
+# print the contingency table
+print(survey_q4_contingency)
 
-
+```
+Plot confliction with prior expectation proportion bar plot across different groups
+```{r}
+survey_q4_prop  <- as.data.frame(survey_q4_contingency)
+# rename columns
+names(survey_q4_prop) <- c("Q4.4", "Group", "Count")
+# add a labelled column
+survey_q4_prop <- survey_q4_prop %>%
+  mutate(Q4.4_label = case_when(
+    Q4.4 == "1" ~ "1-Higher than what I expected",
+    Q4.4 == "2" ~ "2-Lower than what I expected"
+  ))
+# calculate proportions within each group
+survey_q4_prop <- survey_q4_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q4_prop, aes(x = as.factor(`Q4.4_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  labs(
+    title = "Q4.4 Confliction with Prior Expectation Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+survey_q4_summary <- survey_q4_prop %>%
+  group_by(`Q4.4_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q4.4_graph_label` = paste0(`Q4.4_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(survey_q4_summary, aes(x = "",y = proportion, fill = `Q4.4_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Q4.4 Confliction with Prior Expectation Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
 ## Qxx.6 Probability of exactly 2.6%
 what do you think is the probability of inflation being exactly 2.6%?\
 Definitive Correct Answer\
 *descending order*\
-Method: contingency table + proportion test\
-**Result: Fail to reject the null hypothesis**
-<font color="red">Is there any other test? maybe there is just no differences..</font>\
+Variable: categorical\
+Method: contingency table & proportion test\
+**Result: There is no statistical difference in terms of correctly answering the probability of inflation being exactly 2.6%.**
 ```{r}
 # combine data from different groups
 survey_q6 <- data.frame()
@@ -1372,52 +1513,2030 @@ for (i in seq_along(group_list)) {
   names(temp_table) <- c("q6_value", "group")
   survey_q6 <- rbind(survey_q6, temp_table)
 }
-
-# run annova test--> still no significant differences
-# anova_test <- aov(q6_value ~ group, data = survey_q6)
-# summary(anova_test)
-
-
-# run Kruskal-Wallis test--> still no significant differences
-kruskal_test <- kruskal.test(q6_value ~ group, data = survey_q6)
-print(kruskal_test)
-
-# force order
-# survey_q6$group <- factor(survey_q6$group, levels = c("controlled", "errorbar", "shadedbar", "fanchartslice", "bellcurve"))
+survey_q6$q6_value <- as.numeric(survey_q6$q6_value)
 
 survey_q6_contingency <- table(survey_q6$q6_value, survey_q6$group)
+print(survey_q6_contingency)
+
+
 # whether one proportion differs across groups
 less_than_1_per <- survey_q6_contingency[7,]
 survey_q6_group_total <- colSums(survey_q6_contingency)
 prop.test(less_than_1_per, survey_q6_group_total)
 
 ```
+Plot probability of exactly 2.6% proportion bar plot across different groups
+```{r}
+survey_q6_prop  <- as.data.frame(survey_q6_contingency)
+# rename columns
+names(survey_q6_prop) <- c("Qxx.6", "Group", "Count")
+# add a labelled column
+survey_q6_prop <- survey_q6_prop %>%
+  mutate(Qxx.6_label = case_when(
+    Qxx.6 == "1" ~ "1->99%",
+    Qxx.6 == "2" ~ "2-around 80%",
+    Qxx.6 == "3" ~ "3-around 60%",
+    Qxx.6 == "4" ~ "4-around 50%",
+    Qxx.6 == "5" ~ "5-around 30%",
+    Qxx.6 == "6" ~ "6-around 20%",
+    Qxx.6 == "7" ~ "7-<1%"
+  ))
+# calculate proportions within each group
+survey_q6_prop <- survey_q6_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q6_prop, aes(x = as.factor(`Qxx.6_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.6 Probability of exactly 2.6% Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q6, aes(x = q6_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(title = "Qxx.6 Probability of exactly 2.6% Histogram",
+       x = "Response",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q6$q6_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
 
- 
-  
-   
 
+Plot pie chart including all participants
+```{r}
+survey_q6_summary <- survey_q6_prop %>%
+  group_by(`Qxx.6_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `Q6.6_graph_label` = paste0(`Qxx.6_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(survey_q6_summary, aes(x = "",y = proportion, fill = `Q6.6_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Qxx.6 Probability of exactly 2.6% Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
 
-
-
-## Qxx.7 Probability of between 1.9% and 3.3%
+## ! Qxx.7 Probability of between 1.9% and 3.3%
 what do you think is the probability of inflation being between 1.9% and 3.3%?\
 Definitive Correct Answer\
 *descending order*\
-Method: contingency table + proportion test\
-**Result: <font color='red'> See if there is difference across groups??</font>**\
+Method: contingency table & proportion test\
+**Result: There is statistical difference in control group in terms of the proportion of the correct answer of how people think the probability of inflation being between 1.9% and 3.3% is. **\
+```{r}
+# combine data from different groups
+survey_q7 <- data.frame()
+survey_q7_list <- list("Q4.7","Q6.7", "Q8.7", "Q10.7", "Q12.7")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q7_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q7_value", "group")
+  survey_q7 <- rbind(survey_q7, temp_table)
+}
+survey_q7$q7_value <- as.numeric(survey_q7$q7_value)
+```
+
+Test the proportion of correct answer
+```{r}
+survey_q7_contingency <- table(survey_q7$q7_value, survey_q7$group)
+# print the contingency table
+print(survey_q7_contingency)
+# correct answer
+survey_q7_correct <- survey_q7_contingency[5,]
+survey_q7_group_total <- colSums(survey_q7_contingency)
+prop.test(survey_q7_correct, survey_q7_group_total)
+# pairwise proportion test
+pairwise.prop.test(
+  x = survey_q7_contingency[5, ],
+  n = colSums(survey_q7_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+
+
+Plot probability of between 1.9% and 3.3% proportion bar plot across different groups
+```{r}
+survey_q7_prop  <- as.data.frame(survey_q7_contingency)
+# rename columns
+names(survey_q7_prop) <- c("Qxx.7", "Group", "Count")
+# add a labelled column
+survey_q7_prop <- survey_q7_prop %>%
+  mutate(Qxx.7_label = case_when(
+    Qxx.7 == "1" ~ "1->99%",
+    Qxx.7 == "2" ~ "2-around 80%",
+    Qxx.7 == "3" ~ "3-around 60%",
+    Qxx.7 == "4" ~ "4-around 50%",
+    Qxx.7 == "5" ~ "5-around 30%",
+    Qxx.7 == "6" ~ "6-around 20%",
+    Qxx.7 == "7" ~ "7-<1%"
+  ))
+# calculate proportions within each group
+survey_q7_prop <- survey_q7_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q7_prop, aes(x = as.factor(`Qxx.7_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.7 Probability of between 1.9% and 3.3% Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q7, aes(x = q7_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.7 Probability of between 1.9% and 3.3% Histogram",
+       x = "Qxx.7",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q7$q7_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+
 
 ## Qxx.8 Probability of between 3.3% and 5.6%
 what do you think is the probability of inflation being between 3.3% and 5.6%?\
 Definitive Correct Answer\
 *descending order*\
-Method: contingency table + proportion test\
-**Result: <font color='red'> See if there is difference across groups??</font>**\
+Method: contingency table & proportion test\
+**Result: The control group and the error bar group has shown statistical difference.**\
+```{r}
+# combine data from different groups
+survey_q8 <- data.frame()
+survey_q8_list <- list("Q4.8","Q6.8", "Q8.8", "Q10.8", "Q12.8")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q8_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q8_value", "group")
+  survey_q8 <- rbind(survey_q8, temp_table)
+}
+survey_q8$q8_value <- as.numeric(survey_q8$q8_value)
+
+```
+
+contingency table
+```{r}
+survey_q8_contingency <- table(survey_q8$q8_value, survey_q8$group)
+# print the contingency table
+print(survey_q8_contingency)
+# correct answer
+survey_q8_correct <- survey_q8_contingency[5,]
+survey_q8_group_total <- colSums(survey_q8_contingency)
+prop.test(survey_q8_correct, survey_q8_group_total)
+# pairwise proportion test
+pairwise.prop.test(
+  x = survey_q8_contingency[5, ],
+  n = colSums(survey_q8_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+
+
+```
+Plot probability of between 3.3% and 5.6% proportion bar plot across different groups
+```{r}
+survey_q8_prop  <- as.data.frame(survey_q8_contingency)
+# rename columns
+names(survey_q8_prop) <- c("Qxx.8", "Group", "Count")
+# add a labelled column
+survey_q8_prop <- survey_q8_prop %>%
+  mutate(Qxx.8_label = case_when(
+    Qxx.8 == "1" ~ "1->99%",
+    Qxx.8 == "2" ~ "2-around 80%",
+    Qxx.8 == "3" ~ "3-around 60%",
+    Qxx.8 == "4" ~ "4-around 50%",
+    Qxx.8 == "5" ~ "5-around 30%",
+    Qxx.8 == "6" ~ "6-around 20%",
+    Qxx.8 == "7" ~ "7-<1%"
+  ))
+# calculate proportions within each group
+survey_q8_prop <- survey_q8_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q8_prop, aes(x = as.factor(`Qxx.8_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.8 Probability of between 3.3% and 5.6% Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q8, aes(x = q8_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.8 Probability of between 3.3% and 5.6% Histogram",
+       x = "Qxx.8",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q8$q8_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+## ! Qxx.10 Probability of ending outside the range
+Based on the inflation forecast provided, what do you think is the probability of inflation ending up outside of  the range from -0.4% to 5.6%?\
+Definitive Correct Answer (varied between group)\
+*descending order*\
+Variable: categorical\
+Method: calculate the proportion for each group + proportion test\
+**Result: Control group perform significant worse than other groups.**\
+```{r}
+survey_q10 <- data.frame(
+  group   = character(0),
+  correct = integer(0),
+  total   = integer(0),
+  prop    = numeric(0)
+)
+survey_q10_list <- list("Q4.10","Q6.10", "Q8.10", "Q10.10", "Q12.10")
+survey_q10_correct <-c(8,12,14,14,14) # 10%, 40%. 10%, 10%, 10%
+
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q10_list[[i]]
+  q10_correct <- survey_q10_correct[i]
+  
+  # count total number of people in each group
+  total_count <- nrow(df)
+  # count number of people who answered correctly
+  correct_count <- sum(df[, col] == q10_correct, na.rm = TRUE)
+  # compute the proportion
+  prop <- correct_count / total_count
+  # capture the group name
+  grp_label <- names(group_list[i])  
+  # row-bind into survey_q10
+  survey_q10 <- rbind(survey_q10, data.frame(
+    group = grp_label,
+    correct = correct_count,
+    total = total_count,
+    prop = prop))
+}
+
+# proportion test --> There is significant difference
+prop.test(x = survey_q10$correct,
+          n = survey_q10$total)
+# pairwise proportion test
+pairwise.prop.test(
+  x = setNames(survey_q10$correct, survey_q10$group),
+  n = setNames(survey_q10$total,   survey_q10$group),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+
+```{r}
+
+ggplot(survey_q10, aes(x = group, y = prop)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = scales::percent(prop, accuracy = 1)), vjust = -0.5) +
+  labs(title = "Qxx.10 Probability of ending outside the range correct answer rate",
+       x = "Group",
+       y = "Proportion") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()
+```
+Plot distribution for each individual group
+```{r}
+ggplot(controlled_group, aes(x = as.numeric(as.character(Q4.10)))) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  scale_y_continuous(
+    limits = c(0, 50),        # force y from 0 up to 60
+    breaks = seq(0, 50, by=10) # ticks at 0, 10, 20, …, 60
+  ) +
+  geom_text(aes(label = ..count..), stat = "count", vjust = -0.5) +
+  labs(
+    title = "Controlled Group: Distribution of Q4.10 Responses",
+    x     = "Q4.10 (numeric)",
+    y     = "Count"
+  ) +
+  theme_minimal()
+```
+## Qxx.11 Probability of higher than 6%
+Based on the inflation forecast provided, what do you think is the probability of inflation ending up higher than 6%?\
+Definitive Correct Answer - 3\
+variable: categorical\
+Method: contingency table & proportion test\
+**Result: The bell curve and the control group has shown significant difference. The majority people think the probability is extremely low (less than 1%).**\
+```{r}
+# combine data from different groups
+survey_q11 <- data.frame()
+survey_q11_list <- list("Q4.11","Q6.11", "Q8.11", "Q10.11", "Q12.11")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q11_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q11_value", "group")
+  survey_q11 <- rbind(survey_q11, temp_table)
+}
+survey_q11$q11_value <- as.numeric(survey_q11$q11_value)
+
+```
+
+Test the proportion of correct answer
+```{r}
+survey_q11_contingency <- table(survey_q11$q11_value, survey_q11$group)
+# print the contingency table
+print(survey_q11_contingency)
+survey_q11_correct <- survey_q11_contingency[3,]
+survey_q11_group_total <- colSums(survey_q11_contingency)
+prop.test(survey_q11_correct, survey_q11_group_total)
+
+```
+Post-hoc test
+```{r}
+pairwise.prop.test(
+  x = survey_q11_contingency[3, ],
+  n = colSums(survey_q11_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+Plot probability of higher than 6% proportion bar plot across different groups
+```{r}
+survey_q11_prop  <- as.data.frame(survey_q11_contingency)
+# rename columns
+names(survey_q11_prop) <- c("Qxx.11", "Group", "Count")
+# add a labelled column
+survey_q11_prop <- survey_q11_prop %>%
+  mutate(Qxx.11_label = case_when(
+    Qxx.11 == "1" ~ "1-More than 20%",
+    Qxx.11 == "2" ~ "3-5-10%",
+    Qxx.11 == "3" ~ "4-1-5%",
+    Qxx.11 == "4" ~ "5-Less than 1%",
+    Qxx.11 == "5" ~ "2-10-20%"
+  ))
+# calculate proportions within each group
+survey_q11_prop <- survey_q11_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q11_prop, aes(x = as.factor(`Qxx.11_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.11 Probability of higher than 6% Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# force order for graph
+survey_q11 <- survey_q11 %>%
+  mutate(
+    q11_value_re = factor(
+      q11_value,
+      levels = c(1, 5, 2, 3, 4)
+    )
+  )
+# histogram including all participants
+ggplot(survey_q11, aes(x = q11_value_re)) +
+  geom_bar(fill = "steelblue", color = "white") +
+  labs(
+    title = "Qxx.11 Responses (forced 1-5-2-3-4 order)",
+    x     = "Qxx.11",
+    y     = "Count"
+  ) +
+  theme_minimal()
+```
+## Qxx.12 Probability of higher than 3% 
+Based on the inflation forecast provided, what do you think is the probability of inflation ending up higher than 3%?\
+Definitive Correct Answer - 1\
+variable: categorical\
+Method: contingency table & proportion test\
+**Result: There is no statistical difference and the majority people didn't get the answer right.**
+```{r}
+# combine data from different groups
+survey_q12 <- data.frame()
+survey_q12_list <- list("Q4.12","Q6.12", "Q8.12", "Q10.12", "Q12.12")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q12_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q12_value", "group")
+  survey_q12 <- rbind(survey_q12, temp_table)
+}
+survey_q12$q12_value <- as.numeric(survey_q12$q12_value)
+
+```
+
+Test the proportion of correct answer
+```{r}
+survey_q12_contingency <- table(survey_q12$q12_value, survey_q12$group)
+# print the contingency table
+print(survey_q12_contingency)
+
+survey_q12_correct <- survey_q12_contingency[2,]
+survey_q12_group_total <- colSums(survey_q12_contingency)
+prop.test(survey_q12_correct, survey_q12_group_total)
+```
+Plot probability of higher than 3% proportion bar plot across different groups
+```{r}
+survey_q12_prop  <- as.data.frame(survey_q12_contingency)
+# rename columns
+names(survey_q12_prop) <- c("Qxx.12", "Group", "Count")
+# add a labelled column
+survey_q12_prop <- survey_q12_prop %>%
+  mutate(Qxx.12_label = case_when(
+    Qxx.12 == "1" ~ "1-More than 60%",
+    Qxx.12 == "2" ~ "3-40-50%",
+    Qxx.12 == "3" ~ "4-30-40%",
+    Qxx.12 == "4" ~ "5-Less than 30%",
+    Qxx.12 == "5" ~ "2-50-60%"
+  ))
+# calculate proportions within each group
+survey_q12_prop <- survey_q12_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q12_prop, aes(x = as.factor(`Qxx.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.12 Probability of higher than 3% Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# force order for graph
+survey_q12 <- survey_q12 %>%
+  mutate(
+    q12_value_re = factor(
+      q12_value,
+      levels = c(1, 5, 2, 3, 4)
+    )
+  )
+# histogram including all participants
+ggplot(survey_q12, aes(x = q12_value_re)) +
+  geom_bar(fill = "steelblue", color = "white") +
+  labs(
+    title = "Qxx.12 Responses (forced 1-5-2-3-4 order)",
+    x     = "Qxx.12",
+    y     = "Count"
+  ) +
+  theme_minimal()
+```
+
+## ! Qxx.14 Probability of higher than 2% target
+To keep inflation low and stable, Government sets an inflation target of 2%.  Based on the inflation forecast provided, what do you think is the probability of inflation exceeding 2%?\
+Definitive Correct Answer - 3\
+variable: categorical\
+Method: contingency table & proportion test\
+**Result: Control group is significant different from error Bar group and bell curve group; Error bar group has shown statistical difference compared to fan chart slice. 44% of total respondents can understand the probability of inflation being higher than 6% correctly.**
+```{r}
+# combine data from different groups
+survey_q14 <- data.frame()
+survey_q14_list <- list("Q4.14","Q6.14", "Q8.14", "Q10.14", "Q12.14")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q14_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q14_value", "group")
+  survey_q14 <- rbind(survey_q14, temp_table)
+}
+survey_q14$q14_value <- as.numeric(survey_q14$q14_value)
+```
+Test the proportion of correct answer
+```{r}
+survey_q14_contingency <- table(survey_q14$q14_value, survey_q14$group)
+# print the contingency table
+print(survey_q14_contingency)
+
+survey_q14_correct <- survey_q14_contingency[3,]
+survey_q14_group_total <- colSums(survey_q14_contingency)
+prop.test(survey_q14_correct, survey_q14_group_total)
+```
+Pairwise proportion test
+```{r}
+pairwise.prop.test(
+  x = survey_q14_contingency[3, ],
+  n = colSums(survey_q14_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+Plot probability of higher than 2% target proportion bar plot across different groups
+```{r}
+survey_q14_prop  <- as.data.frame(survey_q14_contingency)
+# rename columns
+names(survey_q14_prop) <- c("Qxx.14", "Group", "Count")
+# add a labelled column
+survey_q14_prop <- survey_q14_prop %>%
+  mutate(Qxx.14_label = case_when(
+    Qxx.14 == "1" ~ "1->99%",
+    Qxx.14 == "2" ~ "2-around 80%",
+    Qxx.14 == "3" ~ "3-around 60%",
+    Qxx.14 == "4" ~ "4-around 50%",
+    Qxx.14 == "5" ~ "5-around 30%",
+    Qxx.14 == "6" ~ "6-around 20%",
+    Qxx.14 == "7" ~ "7-<1%"
+  ))
+# calculate proportions within each group
+survey_q14_prop <- survey_q14_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(survey_q14_prop, aes(x = as.factor(`Qxx.14_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.14 Probability of higher than 2% target Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q14, aes(x = q14_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.14 Probability of higher than 2% target Histogram",
+       x = "Qxx.14",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q14$q14_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+
+## Qxx.15 Deviation from central estimate
+Based on the inflation forecast provided, do you think there is a higher risk of inflation in 2026Q2 exceeding the central estimate or of being less than this central estimate?\
+Definitive Correct Answer - 3\
+variable: categorical\
+Method: contingency table & proportion test\
+**Result: The control group shows significant difference compared to the shaded bar group in terms of the correctly choosing understanding the risk is equal. Among all participants, only around 8% respondents think there is downside risk. The largest proportion (48%) of participants believe there is upside risk. **
+```{r}
+# combine data from different groups
+survey_q15 <- data.frame()
+survey_q15_list <- list("Q4.15","Q6.15", "Q8.15", "Q10.15", "Q12.15")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q15_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q15_value", "group")
+  survey_q15 <- rbind(survey_q15, temp_table)
+}
+survey_q15$q15_value <- as.numeric(survey_q15$q15_value)
+```
+
+Contingency table
+```{r}
+survey_q15_contingency <- table(survey_q15$q15_value, survey_q15$group)
+# print the contingency table
+print(survey_q15_contingency)
+# chi-squared test
+chisq_result <- chisq.test(survey_q15_contingency)
+std_resid <- chisq_result$stdres
+print(std_resid)
+
+# correct answer
+survey_q15_correct <- survey_q15_contingency[3,]
+survey_q15_group_total <- colSums(survey_q15_contingency)
+prop.test(survey_q15_correct, survey_q15_group_total)
+```
+Pairwise proportion test
+```{r}
+pairwise.prop.test(
+  x = survey_q15_contingency[3, ],
+  n = colSums(survey_q15_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+
+
+Plot proportion bar plot across different groups
+```{r}
+survey_q15_prop  <- as.data.frame(survey_q15_contingency)
+# rename columns
+names(survey_q15_prop) <- c("Qxx.15", "Group", "Count")
+# add a labelled column
+survey_q15_prop <- survey_q15_prop %>%
+  mutate(Qxx.15_label = case_when(
+    Qxx.15 == "1" ~ "1-bigger upside risk",
+    Qxx.15 == "2" ~ "2-bigger downside risk",
+    Qxx.15 == "3" ~ "3-equal risks on both sides"
+  ))
+# calculate proportions within each group
+survey_q15_prop <- survey_q15_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q15_prop, aes(x = as.factor(`Qxx.15_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.15 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q15, aes(x = q15_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.15 Answer Bar Chart",
+       x = "Qxx.15",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q15$q15_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+## Qxx.17 Self-reported likelihood of exactly 2.6%
+How likely do you think it is that the inflation will be exactly 2.6%?\
+*ascending value-increasing likelihood*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: Fail to reject the null hypothesis. The overall distribution is skewed towards unlikely.**
+```{r}
+# combine data from different groups
+survey_q17 <- data.frame()
+survey_q17_list <- list("Q4.17_1","Q6.17_1", "Q8.17_1", "Q10.17_1", "Q12.17_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q17_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q17_value", "group")
+  survey_q17 <- rbind(survey_q17, temp_table)
+}
+survey_q17$q17_value <- as.numeric(survey_q17$q17_value)
+
+```
+
+KW test
+```{r}
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q17$q17_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q17_value ~ group, data = survey_q17)
+print(kruskal_test)
+```
+
+Plot the distribution of different groups
+```{r}
+# histogram including all participants
+ggplot(survey_q17, aes(x = q17_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.17 Self-reported likelihood of exactly 2.6% distribution",
+       x = "Qxx.17",
+       y = "Count") +
+  scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
+                     labels = likelihood_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Grouped bar-style histogram
+ggplot(survey_q17, aes(x = factor(q17_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  # add labels
+  scale_x_discrete(labels=likelihood_labels) +
+  labs(
+    title = "Qxx.17 Self-reported likelihood of exactly 2.6% distribution by group",
+    x = "Qxx.17 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+## Qxx.21 Self-reported likelihood of inflation being between 1.9% and 3.3%
+How likely do you think it is that the inflation will be between 1.9% and 3.3%?\
+*ascending value-increasing likelihood*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: Fail to reject the null hypothesis. The majority of respondents think it's quite likely.**
+```{r}
+# combine data from different groups
+survey_q21 <- data.frame()
+survey_q21_list <- list("Q4.21_1","Q6.21_1", "Q8.21_1", "Q10.21_1", "Q12.21_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q21_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q21_value", "group")
+  survey_q21 <- rbind(survey_q21, temp_table)
+}
+survey_q21$q21_value <- as.numeric(survey_q21$q21_value)
+```
+
+KW test
+```{r}
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q21$q21_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q21_value ~ group, data = survey_q21)
+print(kruskal_test)
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q21, aes(x = factor(q21_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  # add labels
+  scale_x_discrete(labels=likelihood_labels) +
+  labs(
+    title = "Qxx.21 Self-reported likelihood of inflation being between 1.9% and 3.3% distribution by group",
+    x = "Qxx.21 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Plot bar chart including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q21, aes(x = q21_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.21 Self-reported likelihood of inflation being between 1.9% and 3.3% distribution",
+       x = "Qxx.21",
+       y = "Count") +
+  scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
+                     labels = likelihood_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## ! Qxx.22 Self-reported likelihood of inflation being between 3.3% and 5.6%
+How likely do you think it is that the inflation will be between 3.3% and 5.6%?\
+*ascending value-increasing likelihood*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: The distribution of shaded bar group and bell curve show statistical difference. Near half of the respondents think it's quite unlikely.**
+```{r}
+# combine data from different groups
+survey_q22 <- data.frame()
+survey_q22_list <- list("Q4.22_1","Q6.22_1", "Q8.22_1", "Q10.22_1", "Q12.22_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q22_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q22_value", "group")
+  survey_q22 <- rbind(survey_q22, temp_table)
+}
+survey_q22$q22_value <- as.numeric(survey_q22$q22_value)
+```
+
+KW test
+```{r}
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q22$q22_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q22_value ~ group, data = survey_q22)
+print(kruskal_test)
+
+# Post-hoc test
+dunnTest(q22_value ~ group, data = survey_q22, method = "bonferroni")
+```
+
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q22, aes(x = factor(q22_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  # add labels
+  scale_x_discrete(labels=likelihood_labels) +
+  labs(
+    title = "Qxx.22 Self-reported likelihood of inflation being between 3.3% and 5.6% distribution by group",
+    x = "Qxx.22 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot bar chart including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q22, aes(x = q22_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.22 Self-reported likelihood of inflation being between 3.3% and 5.6% distribution",
+       x = "Qxx.22",
+       y = "Count") +
+  scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
+                     labels = likelihood_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## Qxx.23 Self-reported likelihood of inflation being higher than 3%
+How likely do you think it is that the inflation will be higher than 3%?\
+*ascending value-increasing likelihood*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: Fail to reject the null hypothesis. The majority of respondents think it's quite unlikely, but there is no significant difference.**
+```{r}
+# combine data from different groups
+survey_q23 <- data.frame()
+survey_q23_list <- list("Q4.23_1","Q6.23_1", "Q8.23_1", "Q10.23_1", "Q12.23_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q23_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q23_value", "group")
+  survey_q23 <- rbind(survey_q23, temp_table)
+}
+survey_q23$q23_value <- as.numeric(survey_q23$q23_value)
+```
+KW test
+```{r}
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q23$q23_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q23_value ~ group, data = survey_q23)
+print(kruskal_test)
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q23, aes(x = factor(q23_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  # add labels
+  scale_x_discrete(labels=likelihood_labels) +
+  labs(
+    title = "Qxx.23 Self-reported likelihood of inflation being higher than 3% distribution by group",
+    x = "Qxx.23 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot bar chart including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q23, aes(x = q23_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.23 Self-reported likelihood of inflation being higher than 3% distribution",
+       x = "Qxx.23",
+       y = "Count") +
+  scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
+                     labels = likelihood_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+## Qxx.26 Accuracy of central estimate
+On a scale of 1 to 10, where 1 means not accurate at all and 10 means very accurate, how accurate do you think the central estimate in the graph is?\
+*1-Not accurate at all; 10-Very accurate*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_q26 <- data.frame()
+survey_q26_list <- list("Q4.26_1","Q6.26_1", "Q8.26_1", "Q10.26_1", "Q12.26_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q26_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q26_value", "group")
+  survey_q26 <- rbind(survey_q26, temp_table)
+}
+survey_q26$q26_value <- as.numeric(survey_q26$q26_value)
+```
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_q26$q26_value)
+
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q26$q26_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q26_value ~ group, data = survey_q26)
+print(kruskal_test)
+
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_q26_summary <- survey_q26 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(q26_value, na.rm = TRUE),
+    median = median(q26_value, na.rm = TRUE),
+    sd = sd(q26_value, na.rm = TRUE)
+  )
+```
+
+
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram\
+ggplot(survey_q26, aes(x = factor(q26_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "Qxx.26 Accuracy of central estimate distribution by group",
+    x = "Qxx.26 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Qxx.27 Certainty of central estimate
+On a scale of 1 to 10, where 1 means very uncertain and 10 means very certain, how certain or uncertain do you think the inflation forecast for 2026 Q2 is?\
+*1-Very uncertain; 10-Very certain*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis. **
+```{r}
+# combine data from different groups
+survey_q27 <- data.frame()
+survey_q27_list <- list("Q4.27_1","Q6.27_1", "Q8.27_1", "Q10.27_1", "Q12.27_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q27_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q27_value", "group")
+  survey_q27 <- rbind(survey_q27, temp_table)
+}
+survey_q27$q27_value <- as.numeric(survey_q27$q27_value)
+```
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_q27$q27_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q27$q27_value)
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q27_value ~ group, data = survey_q27)
+print(kruskal_test)
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_q27_summary <- survey_q27 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(q27_value, na.rm = TRUE),
+    median = median(q27_value, na.rm = TRUE),
+    sd = sd(q27_value, na.rm = TRUE)
+  )
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q27, aes(x = factor(q27_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ group) +
+  labs(
+    title = "Qxx.27 The distribution of ceartainty/uncertainty of the central estimate by group",
+    x = "Qxx.27 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
+
+## Qxx.29 Representativeness of the uncertainty
+On a scale of 1 to 10, where 1 means not representative at all and 10 means very representative, how representative do you think the uncertainty being communicated is (i.e., how well the given information reflects the true variability or uncertainty of the forecast?)\
+*1-Not representative at all; 10-Very representative*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_q29 <- data.frame()
+survey_q29_list <- list("Q4.29_1","Q6.29_1", "Q8.29_1", "Q10.29_1", "Q12.29_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q29_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q29_value", "group")
+  survey_q29 <- rbind(survey_q29, temp_table)
+}
+survey_q29$q29_value <- as.numeric(survey_q29$q29_value)
+```
+
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_q29$q29_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q29$q29_value)
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q29_value ~ group, data = survey_q29)
+print(kruskal_test)
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_q29_summary <- survey_q29 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(q29_value, na.rm = TRUE),
+    median = median(q29_value, na.rm = TRUE),
+    sd = sd(q29_value, na.rm = TRUE)
+  )
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q29, aes(x = factor(q29_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "Qxx.29 The distribution of representativeness of the uncertainty by group",
+    x = "Qxx.29 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
+## ! Qxx.30 Readability of the Forecast
+On a scale of 1 to 10, where 1 means very difficult and 10 means very easy, how easy or difficult do you find the graph to understand?\
+*1-Very difficult; 10-Very easy*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis. There are statistical difference between control group vs. fan chart slice group; control group vs. bell curve; error bar group vs. bell curve group.**
+```{r}
+# combine data from different groups
+survey_q30 <- data.frame()
+survey_q30_list <- list("Q4.30_1","Q6.30_1", "Q8.30_1", "Q10.30_1", "Q12.30_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q30_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q30_value", "group")
+  survey_q30 <- rbind(survey_q30, temp_table)
+}
+survey_q30$q30_value <- as.numeric(survey_q30$q30_value)
+```
+
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_q30$q30_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q30$q30_value)
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q30_value ~ group, data = survey_q30)
+print(kruskal_test)
+# Post-hoc test
+dunnTest(q30_value ~ group, data = survey_q30, method = "bonferroni")
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_q30_summary <- survey_q30 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(q30_value, na.rm = TRUE),
+    median = median(q30_value, na.rm = TRUE),
+    sd = sd(q30_value, na.rm = TRUE)
+  )
+```
+
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q30, aes(x = factor(q30_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "Qxx.30 The distribution of readability of the forecast by group",
+    x = "Qxx.30 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+## Qxx.31 Trust of the Forecast
+On a scale of 1 to 10, where 1 means you don’t trust the inflation forecast at all and 10 means you fully trust it, how much do you trust the inflation forecast shown in the graph?\
+*1-Don't trust at all; 10-Fully trust*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis. **
+```{r}
+# combine data from different groups
+survey_q31 <- data.frame()
+survey_q31_list <- list("Q4.31_1","Q6.31_1", "Q8.31_1", "Q10.31_1", "Q12.31_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_q31_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q31_value", "group")
+  survey_q31 <- rbind(survey_q31, temp_table)
+}
+survey_q31$q31_value <- as.numeric(survey_q31$q31_value)
+```
+
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_q31$q31_value)
+
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q31$q31_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q31_value ~ group, data = survey_q31)
+print(kruskal_test)
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_q31_summary <- survey_q31 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(q31_value, na.rm = TRUE),
+    median = median(q31_value, na.rm = TRUE),
+    sd = sd(q31_value, na.rm = TRUE)
+  )
+```
+
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q31, aes(x = factor(q31_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "Qxx.31 The distribution of trust of the forecast by group",
+    x = "Qxx.31 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+# Skewed Data <a name="skewed-data"></a>
+## Qxx.33 Probability of higher than 3%
+Based on the inflation forecast provided, what do you think is the probability of inflation ending up higher than 3%?\
+Definitive Correct Answer - 5\
+Variable: categorical\
+Method: contingency table & proportion test\
+**Result: There is no statistical difference across different groups and the largest proportion of participants can understand the probability correctly, but only account for 28% of the entire respondents. **
+```{r}
+# combine data from different groups
+survey_q33 <- data.frame()
+survey_q33_list <- list("Q6.33","Q8.33", "Q10.33", "Q12.33")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_q33_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q33_value", "group")
+  survey_q33 <- rbind(survey_q33, temp_table)
+}
+survey_q33$q33_value <- as.numeric(survey_q33$q33_value)
+```
+
+Test the proportion of correct answer
+```{r}
+survey_q33_contingency <- table(survey_q33$q33_value, survey_q33$group)
+print(survey_q33_contingency)
+survey_q33_correct <- survey_q33_contingency[5,]
+survey_q33_group_total <- colSums(survey_q33_contingency)
+prop.test(survey_q33_correct, survey_q33_group_total)
+```
+Plot probability of higher than 3% (proportion bar plot across different groups)
+```{r}
+survey_q33_prop  <- as.data.frame(survey_q33_contingency)
+# rename columns
+names(survey_q33_prop) <- c("Qxx.33", "Group", "Count")
+# add a labelled column
+survey_q33_prop <- survey_q33_prop %>%
+  mutate(Qxx.33_label = case_when(
+    Qxx.33 == "1" ~ "1-More than 60%",
+    Qxx.33 == "2" ~ "3-40-50%",
+    Qxx.33 == "3" ~ "4-30-40%",
+    Qxx.33 == "4" ~ "5-Less than 30%",
+    Qxx.33 == "5" ~ "2-50-60%"
+  ))
+# calculate proportions within each group
+survey_q33_prop <- survey_q33_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q33_prop, aes(x = as.factor(`Qxx.33_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.33 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# force order for graph
+survey_q33 <- survey_q33 %>%
+  mutate(
+    q33_value_re = factor(
+      q33_value,
+      levels = c(1, 5, 2, 3, 4)
+    )
+  )
+# histogram including all participants
+ggplot(survey_q33, aes(x = q33_value_re)) +
+  geom_bar(fill = "steelblue", color = "white") +
+  labs(
+    title = "Qxx.33 Responses (forced 1-5-2-3-4 order)",
+    x     = "Qxx.33",
+    y     = "Count"
+  ) +
+  theme_minimal()
+
+```
+## Qxx.34 Self-reported likelihood of inflation being higher than 3%
+How likely do you think it is that the inflation will be higher than 3%?\
+*ascending value-increasing likelihood*\
+Variable: treat as continuous\
+Method: Kruskal-Wallis test\
+**Result: Fail to reject the null hypothesis. The majority of respondents think it's quite likely.**
+```{r}
+# combine data from different groups
+survey_q34 <- data.frame()
+survey_q34_list <- list("Q6.34_1","Q8.34_1", "Q10.34_1", "Q12.34_1")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_q34_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q34_value", "group")
+  survey_q34 <- rbind(survey_q34, temp_table)
+}
+survey_q34$q34_value <- as.numeric(survey_q34$q34_value)
+```
+KW test
+```{r}
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_q34$q34_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(q34_value ~ group, data = survey_q34)
+print(kruskal_test)
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_q34, aes(x = factor(q34_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  # add labels
+  scale_x_discrete(labels=likelihood_labels) +
+  labs(
+    title = "Qxx.34 Self-reported likelihood of inflation being higher than 3% distribution by group",
+    x = "Qxx.34 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot bar chart including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q34, aes(x = q34_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.34 Self-reported likelihood of inflation being higher than 3% distribution",
+       x = "Qxx.34",
+       y = "Count") +
+  scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
+                     labels = likelihood_labels) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## Qxx.36 Deviation from central estimate
+Based on the inflation forecast provided,  do you think there is a higher risk of inflation exceeding the central estimate or of being less than this central estimate?\
+Definitive Correct Answer - 1\
+Variable: categorical\
+Method: contingency table & proportion test\
+**Result: There is no statistical difference across group. 68% of respondents can understand there is bigger upside risk. **
+```{r}
+# combine data from different groups
+survey_q36 <- data.frame()
+survey_q36_list <- list("Q6.36","Q8.36", "Q10.36", "Q12.36")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_q36_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q36_value", "group")
+  survey_q36 <- rbind(survey_q36, temp_table)
+}
+survey_q36$q36_value <- as.numeric(survey_q36$q36_value)
+```
+
+Contingency table
+```{r}
+survey_q36_contingency <- table(survey_q36$q36_value, survey_q36$group)
+print(survey_q36_contingency)
+chisq_result <- chisq.test(survey_q36_contingency)
+print(chisq_result)
+```
+Test the proportion of correct answer
+```{r}
+survey_q36_correct <- survey_q36_contingency[1,]
+survey_q36_group_total <- colSums(survey_q36_contingency)
+prop.test(survey_q36_correct, survey_q36_group_total)
+```
+
+Plot proportion bar plot across different groups
+```{r}
+survey_q36_prop  <- as.data.frame(survey_q36_contingency)
+# rename columns
+names(survey_q36_prop) <- c("Qxx.36", "Group", "Count")
+# add a labelled column
+survey_q36_prop <- survey_q36_prop %>%
+  mutate(Qxx.36_label = case_when(
+    Qxx.36 == "1" ~ "1-bigger upside risk",
+    Qxx.36 == "2" ~ "2-bigger downside risk",
+    Qxx.36 == "3" ~ "3-equal risks on both sides"
+  ))
+# calculate proportions within each group
+survey_q36_prop <- survey_q36_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q36_prop, aes(x = as.factor(`Qxx.36_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.36 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q36, aes(x = q36_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.36 Answer Bar Chart",
+       x = "Qxx.36",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q36$q36_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+
+## ? Qxx.37 Risk of ending outside
+If the actual inflation ends up outside the black line, which side is more likely, based on the uncertainty depicted in the graph?\
+Definitive Correct Answer - 1\
+Variable: categorical\
+Method: contingency table & proportion test\
+**Result: 63% respondents think if the actual inflation ends up outside, it's more likely to be on the upper side. **
+```{r}
+# combine data from different groups
+survey_q37 <- data.frame()
+survey_q37_list <- list("Q6.37","Q8.37", "Q10.37", "Q12.37")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_q37_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("q37_value", "group")
+  survey_q37 <- rbind(survey_q37, temp_table)
+}
+survey_q37$q37_value <- as.numeric(survey_q37$q37_value)
+```
+
+Contingency table
+```{r}
+survey_q37_contingency <- table(survey_q37$q37_value, survey_q37$group)
+print(survey_q37_contingency)
+
+# chisq_result <- chisq.test(survey_q37_contingency)
+# print(chisq_result)
+
+# Test the proportion of correct answer
+survey_q37_correct <- survey_q37_contingency[1,]
+survey_q37_group_total <- colSums(survey_q37_contingency)
+prop.test(survey_q37_correct, survey_q37_group_total)
+
+# pairwise proportion test
+pairwise.prop.test(
+  x = survey_q37_contingency[1,],
+  n = colSums(survey_q37_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_q37_prop  <- as.data.frame(survey_q37_contingency)
+# rename columns
+names(survey_q37_prop) <- c("Qxx.37", "Group", "Count")
+# add a labelled column
+survey_q37_prop <- survey_q37_prop %>%
+  mutate(Qxx.37_label = case_when(
+    Qxx.37 == "1" ~ "1-More likely to be on the upper side",
+    Qxx.37 == "2" ~ "2-More likely to be on the lower side",
+    Qxx.37 == "3" ~ "3-Equal chances of being on either side"
+  ))
+# calculate proportions within each group
+survey_q37_prop <- survey_q37_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_q37_prop, aes(x = as.factor(`Qxx.37_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "Qxx.37 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_q37, aes(x = q37_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "Qxx.37 Answer Bar Chart",
+       x = "Qxx.37",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_q37$q37_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
 
 
 
 
+# Decision-making <a name="decision-making"></a>
+## D.3 Investment Decision
+Which bond would you choose to invest in?\
+Variable: categorical\
+Method: contingency table & proportion test\
+**Result: Fail to reject the null hypothesis. **
+```{r}
+# combine data from different groups
+survey_d3 <- data.frame()
+survey_d3_list <- list("Q5.3","Q7.3", "Q9.3", "Q11.3", "Q13.3")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d3_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d3_value", "group")
+  survey_d3 <- rbind(survey_d3, temp_table)
+}
+survey_d3$d3_value <- as.numeric(survey_d3$d3_value)
+```
+Contingency table
+```{r}
+survey_d3_contingency <- table(survey_d3$d3_value, survey_d3$group)
+print(survey_d3_contingency)
+# chi-squared test
+chisq.test(survey_d3_contingency)
 
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_d3_prop  <- as.data.frame(survey_d3_contingency)
+# rename columns
+names(survey_d3_prop) <- c("D.3", "Group", "Count")
+# add a labelled column
+survey_d3_prop <- survey_d3_prop %>%
+  mutate(D.3_label = case_when(
+    D.3 == "1" ~ "A. Nominal Bond",
+    D.3 == "2" ~ "B. Inflation-Protected Bond"
+  ))
+# calculate proportions within each group
+survey_d3_prop <- survey_d3_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_d3_prop, aes(x = as.factor(`D.3_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "D.3 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+survey_d3_summary <- survey_d3_prop %>%
+  group_by(`D.3_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `D.3_graph_label` = paste0(`D.3_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(survey_d3_summary, aes(x = "",y = proportion, fill = `D.3_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "D.3 Investment Decision Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+## D.4 Confidence in decision-making
+On a scale of 1 to 10, where 1 means not confident at all and 10 means very confident, how confident  are you in making the decision?\
+*1-Not confident at all; 10-Very confident*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis. **
+```{r}
+# combine data from different groups
+survey_d4 <- data.frame()
+survey_d4_list <- list("Q5.4_1","Q7.4_1", "Q9.4_1", "Q11.4_1", "Q13.4_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d4_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d4_value", "group")
+  survey_d4 <- rbind(survey_d4, temp_table)
+}
+survey_d4$d4_value <- as.numeric(survey_d4$d4_value)
+```
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_d4$d4_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_d4$d4_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(d4_value ~ group, data = survey_d4)
+print(kruskal_test)
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_d4_summary <- survey_d4 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(d4_value, na.rm = TRUE),
+    median = median(d4_value, na.rm = TRUE),
+    sd = sd(d4_value, na.rm = TRUE)
+  )
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_d4, aes(x = factor(d4_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "D.4 The distribution of confidence in decision-making by group",
+    x = "D.4 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+## D.6 Considering nominal bond
+If the probability of inflation being low (≤ 3%) is greater than the following percentages, I would consider investing in the nominal bond:\
+Variable: categorical\
+Method: contingency table & chi-squared test\
+**Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_d6 <- data.frame()
+survey_d6_list <- list("Q5.6","Q7.6", "Q9.6", "Q11.6", "Q13.6")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d6_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d6_value", "group")
+  survey_d6 <- rbind(survey_d6, temp_table)
+}
+survey_d6$d6_value <- as.numeric(survey_d6$d6_value)
+```
+Contingency table
+```{r}
+survey_d6_contingency <- table(survey_d6$d6_value, survey_d6$group)
+print(survey_d6_contingency)
+# run chi-squared test
+chisq_result <- chisq.test(survey_d6_contingency)
+print(chisq_result)
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_d6_prop  <- as.data.frame(survey_d6_contingency)
+# rename columns
+names(survey_d6_prop) <- c("D.6", "Group", "Count")
+# add a labelled column
+survey_d6_prop <- survey_d6_prop %>%
+  mutate(D.6_label = case_when(
+    D.6 == "1" ~ "1-40%",
+    D.6 == "2" ~ "2-50%",
+    D.6 == "3" ~ "3-60%",
+    D.6 == "4" ~ "4-do not think about probability",
+    D.6 == "5" ~ "5-always choose an inflation-protected bond",
+    D.6 == "7" ~ "6-70%",
+    D.6 == "8" ~ "7-80%"
+  ))
+# calculate proportions within each group
+survey_d6_prop <- survey_d6_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_d6_prop, aes(x = as.factor(`D.6_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "D.6 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_d6, aes(x = d6_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "D.6 Histogram",
+       x = "D.6",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_d6$d6_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+## D.7 Considering inflation-protected bond
+If the probability of inflation being high (> 3%) is greater than the following percentages, I would consider investing in the inflation-protected bond:\
+Variable: categorical\
+Method: contingency table & chi-squared test\
+*Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_d7 <- data.frame()
+survey_d7_list <- list("Q5.7","Q7.7", "Q9.7", "Q11.7", "Q13.7")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d7_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d7_value", "group")
+  survey_d7 <- rbind(survey_d7, temp_table)
+}
+survey_d7$d7_value <- as.numeric(survey_d7$d7_value)
+```
+Contingency table
+```{r}
+survey_d7_contingency <- table(survey_d7$d7_value, survey_d7$group)
+print(survey_d7_contingency)
+# run chi-squared test
+chisq_result <- chisq.test(survey_d7_contingency)
+print(chisq_result)
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_d7_prop  <- as.data.frame(survey_d7_contingency)
+# rename columns
+names(survey_d7_prop) <- c("D.7", "Group", "Count")
+# add a labelled column
+survey_d7_prop <- survey_d7_prop %>%
+  mutate(D.7_label = case_when(
+    D.7 == "1" ~ "1-40%",
+    D.7 == "2" ~ "2-50%",
+    D.7 == "3" ~ "3-60%",
+    D.7 == "4" ~ "4-do not think about probability",
+    D.7 == "5" ~ "5-always choose a nominal bond",
+    D.7 == "7" ~ "6-70%",
+    D.7 == "8" ~ "7-80%"
+  ))
+# calculate proportions within each group
+survey_d7_prop <- survey_d7_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_d7_prop, aes(x = as.factor(`D.7_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "D.7 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_d7, aes(x = d7_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "D.7 Histogram",
+       x = "D.7",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_d7$d7_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+## D.8 Impact on Desicion-making
+Considering the payoff for the Nominal Bond, which of the following has a larger impact on your decision-making?\
+Variable: categorical\
+Method: contingency table & chi-squared test\
+**Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_d8 <- data.frame()
+survey_d8_list <- list("Q5.8","Q7.8", "Q9.8", "Q11.8", "Q13.8")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d8_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d8_value", "group")
+  survey_d8 <- rbind(survey_d8, temp_table)
+}
+survey_d8$d8_value <- as.numeric(survey_d8$d8_value)
+```
+Contingency table
+```{r}
+survey_d8_contingency <- table(survey_d8$d8_value, survey_d8$group)
+print(survey_d8_contingency)
+# run chi-squared test
+chisq_result <- chisq.test(survey_d8_contingency)
+print(chisq_result)
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_d8_prop  <- as.data.frame(survey_d8_contingency)
+# rename columns
+names(survey_d8_prop) <- c("D.8", "Group", "Count")
+# add a labelled column
+survey_d8_prop <- survey_d8_prop %>%
+  mutate(D.8_label = case_when(
+    D.8 == "1" ~ "1-potential loss",
+    D.8 == "2" ~ "2-potential gain",
+    D.8 == "3" ~ "3-potential loss and gain have the same impact"
+  ))
+# calculate proportions within each group
+survey_d8_prop <- survey_d8_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_d8_prop, aes(x = as.factor(`D.8_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "D.8 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot the histogram including all participants
+```{r}
+# histogram including all participants
+ggplot(survey_d8, aes(x = d8_value)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  # facet_wrap(~ group) +
+  labs(title = "D.8 Histogram",
+       x = "D.8",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(0, max(survey_d8$d8_value, na.rm = TRUE), by = 1)) +
+  theme_minimal()
+```
+
+## D.9 Effectiveness of the graph for decision-making
+On a scale of 1 to 10, where 1 means the forecast was not effective at all and 10 means it was very effective, how effective do you think the forecast was in assisting your decision-making?\
+*1-Not effective at all; 10-Very effective*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: At least one group is statistically significant than others. **
+```{r}
+# combine data from different groups
+survey_d9 <- data.frame()
+survey_d9_list <- list("Q5.9_1","Q7.9_1", "Q9.9_1", "Q11.9_1", "Q13.9_1")
+for (i in seq_along(group_list)) {
+  df <- group_list[[i]]
+  col <- survey_d9_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d9_value", "group")
+  survey_d9 <- rbind(survey_d9, temp_table)
+}
+survey_d9$d9_value <- as.numeric(survey_d9$d9_value)
+```
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_d9$d9_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_d9$d9_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(d9_value ~ group, data = survey_d9)
+print(kruskal_test)
+# Post-hoc test
+dunnTest(d9_value ~ group, data = survey_d9, method = "bonferroni")
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_d9_summary <- survey_d9 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(d9_value, na.rm = TRUE),
+    median = median(d9_value, na.rm = TRUE),
+    sd = sd(d9_value, na.rm = TRUE)
+  )
+```
+
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_d9, aes(x = factor(d9_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "D.9 The distribution of effectiveness of the graph for decision-making by group",
+    x = "D.9 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
+
+## ? D.12 Skewed Investment Decision
+Which bond would you choose to invest in?\
+Variable: categorical\
+Method: contingency table & chi-squared test\
+**Result: There is significant difference in at least one group.**
+```{r}
+# combine data from different groups
+survey_d12 <- data.frame()
+survey_d12_list <- list("Q7.12", "Q9.12", "Q11.12", "Q13.12")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_d12_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d12_value", "group")
+  survey_d12 <- rbind(survey_d12, temp_table)
+}
+survey_d12$d12_value <- as.numeric(survey_d12$d12_value)
+```
+Contingency table
+```{r}
+survey_d12_contingency <- table(survey_d12$d12_value, survey_d12$group)
+print(survey_d12_contingency)
+# run chi-squared test
+chisq_result <- chisq.test(survey_d12_contingency)
+# print(chisq_result)
+std_resid <- chisq_result$stdres
+print(std_resid)
+
+# pairwise proportion test
+pairwise.prop.test(
+  x = survey_d12_contingency[2,],
+  n = colSums(survey_d12_contingency),
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+Plot proportion bar plot across different groups
+```{r}
+survey_d12_prop  <- as.data.frame(survey_d12_contingency)
+# rename columns
+names(survey_d12_prop) <- c("D.12", "Group", "Count")
+# add a labelled column
+survey_d12_prop <- survey_d12_prop %>%
+  mutate(D.12_label = case_when(
+    D.12 == "1" ~ "A. Nominal Bond",
+    D.12 == "2" ~ "B. Inflation-Protected Bond"
+  ))
+# calculate proportions within each group
+survey_d12_prop <- survey_d12_prop %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count))
+ggplot(survey_d12_prop, aes(x = as.factor(`D.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+  # facet_wrap(~Group)+
+  labs(
+    title = "D.12 Answer Propotion Plot across Groups",
+    x = "Response",
+    y = "Proportion"
+  ) +
+   scale_fill_brewer(palette = "Set2")+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Plot pie chart including all participants
+```{r}
+survey_d12_summary <- survey_d12_prop %>%
+  group_by(`D.12_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         `D.12_graph_label` = paste0(`D.12_label`, " (", round(proportion * 100, 2), " %)"))
+ggplot(survey_d12_summary, aes(x = "",y = proportion, fill = `D.12_graph_label`)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "D.12 Investment Decision Summary Pie Chart",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+```
+## D.13 Skewed Confidentce in decision-making
+On a scale of 1 to 10, where 1 means not confident at all and 10 means very confident, how confident  are you in making the decision?\
+*1-Not confident at all; 10-Very confident*\
+Variable: continuous\
+Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
+**Result: Fail to reject the null hypothesis.**
+```{r}
+# combine data from different groups
+survey_d13 <- data.frame()
+survey_d13_list <- list("Q7.13_1", "Q9.13_1", "Q11.13_1", "Q13.13_1")
+for (i in seq_along(skewed_group_list)) {
+  df <- skewed_group_list[[i]]
+  col <- survey_d13_list[[i]]
+  temp_table <- df[, c(col, "group")]
+  names(temp_table) <- c("d13_value", "group")
+  survey_d13 <- rbind(survey_d13, temp_table)
+}
+survey_d13$d13_value <- as.numeric(survey_d13$d13_value)
+```
+Statistical test
+```{r}
+# Initial Check
+# summary(survey_d13$d13_value)
+# check normality --> the data is not normally distributed
+# shapiro.test(survey_d13$d13_value)
+
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(d13_value ~ group, data = survey_d13)
+print(kruskal_test)
+
+```
+Summary statistics
+```{r}
+# Summary statistics
+survey_d13_summary <- survey_d13 %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(d13_value, na.rm = TRUE),
+    median = median(d13_value, na.rm = TRUE),
+    sd = sd(d13_value, na.rm = TRUE)
+  )
+```
+Plot the distribution of different groups
+```{r}
+# Grouped bar-style histogram
+ggplot(survey_d13, aes(x = factor(d13_value), fill = factor(group))) +
+  geom_bar(position = "dodge") +
+  # facet_wrap(~ group) +
+  labs(
+    title = "D.13 The distribution of confidence in decision-making by group",
+    x = "D.13 Response",
+    y = "Count",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
+
+# Cross-tabulation
+## Current Inflation Knowledge vs. Inflation Forecast Knowledge
+## Skewed Data vs. Unskewed Data ( understanding and decision making)
+## For people who can correctly understand the probability (? which), what decision do they make? --> I am thinking propotion test see reduced probability. 
+## Does familarity with the graph type affect understanding and the decision?
 
 
 
@@ -1427,16 +3546,17 @@ Type I error- false positives (saying there's a difference when there isn't)
 ## Chi-squared test
 ### Post-hoc test
 1. Standardized residuals
-```{r}
+```{r eval=FALSE, include=FALSE}
 chisq_result <- chisq.test(q3_4_contingency)
 std_resid <- chisq_result$stdres
+print(std_resid)
 ```
 Cells with absolute value > ~2 (or > 1.96 for 95% confidence)indicate  contributing most to the overall chi-squared\
 
-2. Pairwise proportion tests:
-```{r}
+2. Pairwise proportion tests: can only compare one value
+```{r eval=FALSE, include=FALSE}
 pairwise.prop.test(
-  x = q3_4_contingency[, 1:ncol(q3_4_contingency)],  # counts per group
+  x = q3_4_contingency[1,],  # counts per group
   n = colSums(q3_4_contingency),                     # total per group
   p.adjust.method = "bonferroni"                     # or "holm", "BH"
 )
@@ -1446,13 +3566,13 @@ pairwise.prop.test(
 ## ANOVA test
 ANOVA only compares the means of the groups.\
 ### Assumptions of ANOVA
-1. Normality of residuals within each group
-```{r}
+1. Normality of residuals within each group: If p-value<0.05, the data is not normally distributed\
+```{r eval=FALSE, include=FALSE}
 shapiro.test(df$value)
 ```
 
 2. Homogeneity of variances across groups
-```{r}
+```{r}{r eval=FALSE, include=FALSE}
 # Check the assumption of equal variances (homogeneity of variance) across groups 
 # If p< 0.05, we can reject the null hypothesis of equal variances, meaning the variances are significantly different across groups
 bartlett.test(`Q3.2` ~ group, data = age_table) # if data is normally distributed
@@ -1462,7 +3582,7 @@ leveneTest(value ~ group, data = time_duration_table)
 ```
 ### Post-hoc test
 If ANOVA is significant, we can perform post-hoc tests to determine which groups are significantly different from each other.\
-```{r}
+```{r}{r eval=FALSE, include=FALSE}
 # post-hoc test
 tukey_test <- TukeyHSD(anova_test)
 print(tukey_test)
@@ -1479,7 +3599,7 @@ when the assumptions of one-way ANOVA are not met: normality and equal variances
 
 e.g., Likert-scale responses (ordinal) 
 ### Post-hoc test
-```{r}
+```{r eval=FALSE, include=FALSE}
 library(FSA)
 
 dunnTest(value ~ group, data = df, method = "bonferroni")
@@ -1488,4 +3608,6 @@ dunnTest(value ~ group, data = df, method = "bonferroni")
 
 ## Propotion test -prop.test()
 - prop.test(): at least one group differs
+<font color="red">continuity correction??</font>
+The prop.test() function only supports alternative = "less" or "greater" when comparing a single proportion to a hypothesized value — not when comparing multiple groups.
 - pairwise.prop.test():  identifying which specific pairs of groups differ significantly in their proportions, choose the p.adjust.method = "holm" or "bonferroni" or "BH"
