@@ -45,6 +45,8 @@ library(ggplot2)
 library(tidyr)
 library(FSA)
 library(car)
+library(rstatix)   
+library(effectsize) 
 
 
 
@@ -61,6 +63,12 @@ rawdata_value <- rawdata_value %>%
     !is.na(Q8.2)  ~ '2-shadedbar',
     !is.na(Q10.2) ~ '3-fanchartslice',
     !is.na(Q12.2) ~ '4-bellcurve'
+  ),
+  treatment = case_when(
+    group %in% c("1-errorbar","2-shadedbar","3-fanchartslice","4-bellcurve")
+      ~ "treatment_group",
+     TRUE
+      ~ as.character(group)     # or another fallback
   ))
 # create a copy of the data for Q3.9 analysis
 rawdata_q3_9 <- rawdata_value
@@ -115,11 +123,11 @@ bell_curve <-rawdata_value[!is.na(rawdata_value$Q12.2), ]
 
 
 # remove unnecessary columns
-controlled_group = controlled_group[,grepl("^(Q3|Q4|Q5)",names(controlled_group))|names(controlled_group) %in% c("Duration (in seconds)", "group")]
-error_bar = error_bar[,grepl("^(Q3|Q6|Q7)",names(error_bar))| names(error_bar) %in% c("Duration (in seconds)", "group")]
-shaded_bar = shaded_bar[,grepl("^(Q3|Q8|Q9)",names(shaded_bar))| names(shaded_bar)%in% c("Duration (in seconds)", "group")]
-fanchart_slice = fanchart_slice[,grepl("^(Q3|Q10|Q11)",names(fanchart_slice))| names(fanchart_slice) %in% c("Duration (in seconds)", "group")]
-bell_curve = bell_curve[,grepl("^(Q3|Q12|Q13)",names(bell_curve))| names(bell_curve) %in% c("Duration (in seconds)", "group")]
+controlled_group = controlled_group[,grepl("^(Q3|Q4|Q5)",names(controlled_group))|names(controlled_group) %in% c("Duration (in seconds)", "group","treatment")]
+error_bar = error_bar[,grepl("^(Q3|Q6|Q7)",names(error_bar))| names(error_bar) %in% c("Duration (in seconds)", "group","treatment")]
+shaded_bar = shaded_bar[,grepl("^(Q3|Q8|Q9)",names(shaded_bar))| names(shaded_bar)%in% c("Duration (in seconds)", "group","treatment")]
+fanchart_slice = fanchart_slice[,grepl("^(Q3|Q10|Q11)",names(fanchart_slice))| names(fanchart_slice) %in% c("Duration (in seconds)", "group","treatment")]
+bell_curve = bell_curve[,grepl("^(Q3|Q12|Q13)",names(bell_curve))| names(bell_curve) %in% c("Duration (in seconds)", "group","treatment")]
 # controlled_group = controlled_group[,!sapply(controlled_group, function(x) mean(is.na(x)))>0.9]
 
 group_list <- list(
@@ -462,7 +470,7 @@ q3_6_summary <- q3_6_table %>%
 ggplot(q3_6_summary, aes(x = factor(label), y = proportion)) +
   geom_col(fill = "steelblue") +
   geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
-            vjust = -0.3, size = 3.5) +
+            vjust = -0.2) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   labs(
     title = "Percentage of Participants Selecting Each Q3.6 Option",
@@ -682,6 +690,7 @@ ggplot(q3_8_summary, aes(x = "",y = proportion, fill = `Q3.8_label`)) +
   theme_minimal() +
   theme(axis.text.x = element_blank())
 ```
+
 ## Q3.9 Inflation Knowledge
 To the best of your knowledge, which option most accurately describes what inflation is?\
 Definitive correct answer\
@@ -1284,10 +1293,168 @@ ggplot(q3_19_summary, aes(x = "",y = proportion, fill = `Q3.19_graph_label`)) +
 
 
 
+## Comparison of current inflation and inflation forecast
+Frequency
+```{r}
+q3_12_long <- q3_12_prop %>%
+group_by(`Q3.12_label`) %>%
+  rename(choice = `Q3.12_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.12 Current Inflation")
+
+q3_16_long <- q3_16_prop %>%
+  group_by(`Q3.16_label`) %>%
+  rename(choice = `Q3.16_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.16 Infaltion Forecasts")
+
+# bind them together
+q3_frequency <- bind_rows(q3_12_long, q3_16_long)
+
+ggplot(q3_frequency, aes(x = choice, y = proportion, fill = question)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+            position = position_dodge(width = 0.8), vjust = -0.5) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.1)) 
+  ) +
+  labs(
+    title = "(Frequency) Comparison of Q3.12 vs Q3.16 Response Proportions",
+    x     = "Response category",
+    y     = "Proportion",
+    fill  = "Question"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+```
+Chi-squared Testing
+```{r}
+q3_12_t <- q3_12_table %>%
+  rename(choice = `Q3.12`) %>%
+  mutate(question = "Q3.12")
+q3_16_t <- q3_16_table %>%
+  rename(choice = `Q3.16`) %>%
+  mutate(question = "Q3.16")
+# bind them together
+q3_frequency_t <- bind_rows(q3_12_t, q3_16_t)
+q3_frequency_table <- table(q3_frequency_t$choice, q3_frequency_t$question)
+print(q3_frequency_table)
+chisq.test(q3_frequency_table)
+
+chisq_result <- chisq.test(q3_frequency_table)
+std_resid <- chisq_result$stdres
+print(std_resid)
+
+# cramerV(q3_frequency_table)
+
+```
+
+Source
+```{r}
+q3_13_long <- q3_13_summary %>%
+  rename(choice = `Q3.13_label`) %>%
+  mutate(question = "Q3.13 Current Inflation")
+q3_17_long <- q3_17_summary %>%
+  rename(choice = `Q3.17_label`) %>%
+  mutate(question = "Q3.17 Infaltion Forecasts")
+# bind them together
+q3_source <- bind_rows(q3_13_long, q3_17_long)
+# plot
+ggplot(q3_source, aes(x = choice, y = proportion, fill = question)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+            position = position_dodge(width = 0.8), vjust = -0.5,size = 2) +
+  labs(
+    title = "(Source) Comparison of Q3.13 vs Q3.17 Response Proportions",
+    x     = "Response category",
+    y     = "Proportion",
+    fill  = "Question"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+```
+Impact
+```{r}
+q3_14_long <- q3_14_prop %>%
+group_by(`Q3.14_label`) %>%
+  rename(choice = `Q3.14_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.14 Current Inflation")
+
+q3_18_long <- q3_18_prop %>%
+  group_by(`Q3.18_label`) %>%
+  rename(choice = `Q3.18_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.18 Infaltion Forecasts")
+# bind them together
+q3_impact <- bind_rows(q3_14_long, q3_18_long)
+
+ggplot(q3_impact, aes(x = choice, y = proportion, fill = question)) +
+  # facet_wrap(~ question) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+        position = position_dodge(width = 0.8), vjust = -0.5,size =3) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.1)) 
+  ) +
+  labs(
+    title = "(Impact) Comparison of Q3.14 vs Q3.18 Response Proportions",
+    x     = "Response category",
+    y     = "Proportion",
+    fill  = "Question"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+```
+Response
+```{r}
+q3_15_long <- q3_15_prop %>%
+group_by(`Q3.15_label`) %>%
+  rename(choice = `Q3.15_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.15 Current Inflation")
+q3_19_long <- q3_19_prop %>%
+  group_by(`Q3.19_label`) %>%
+  rename(choice = `Q3.19_label`) %>%
+  summarise(total_count = sum(Count), .groups = "drop") %>%
+  mutate(proportion = total_count / sum(total_count),
+         question = "Q3.19 Infaltion Forecasts")
+# bind them together
+q3_response <- bind_rows(q3_15_long, q3_19_long)
+ggplot(q3_response, aes(x = choice, y = proportion, fill = question)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+            position = position_dodge(width = 0.8), vjust = -0.5, size =3) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.1)) 
+  ) +
+  labs(
+    title = "(Response) Comparison of Q3.15 vs Q3.19 Response Proportions",
+    x     = "Response category",
+    y     = "Proportion",
+    fill  = "Question"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+```
 
 # Actual Survey Analysis <a name="actual-survey-analysis"></a>
 
-## ! Qxx.2 Graph Familarity
+## Qxx.2 Graph Familarity
 Have you ever been communicated this type of information before?\
 Variable: categorical\
 Method: Contingency Table + Chi-squared test\
@@ -1548,7 +1715,7 @@ survey_q6_prop <- survey_q6_prop %>%
 ggplot(survey_q6_prop, aes(x = as.factor(`Qxx.6_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.6 Probability of exactly 2.6% Propotion Plot across Groups",
+    title = "Qxx.6 Probability of Being Exactly 2.6% Propotion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1662,6 +1829,16 @@ Plot the histogram including all participants
 # histogram including all participants
 ggplot(survey_q7, aes(x = q7_value)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  geom_text(     stat = "bin",
+    aes(
+      label = after_stat(
+        ifelse(
+          count == 0,                     
+          "",                             
+          scales::percent(count / total_respondents, accuracy = 0.1)
+        )
+      )
+    ), vjust = -0.5, size = 3) +
   # facet_wrap(~ group) +
   labs(title = "Qxx.7 Probability of between 1.9% and 3.3% Histogram",
        x = "Qxx.7",
@@ -1814,9 +1991,9 @@ ggplot(survey_q10, aes(x = group, y = prop)) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   theme_minimal()
 ```
-Plot distribution for each individual group
+Plot distribution for each individual group (change the group and question number manually)
 ```{r}
-ggplot(controlled_group, aes(x = as.numeric(as.character(Q4.10)))) +
+ggplot(bell_curve, aes(x = as.numeric(as.character(Q12.10)))) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
   scale_y_continuous(
     limits = c(0, 50),        # force y from 0 up to 60
@@ -2188,6 +2365,21 @@ for (i in seq_along(group_list)) {
 }
 survey_q17$q17_value <- as.numeric(survey_q17$q17_value)
 
+#initial check
+summary(survey_q17$q17_value)
+
+```
+Summary Table
+```{r}
+survey_q17_summary <- survey_q17 %>% 
+  group_by(group) %>%
+  summarise(
+    median = median(q17_value, na.rm = TRUE),
+    IQR    = IQR(q17_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q17_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q17_value, 0.75, na.rm = TRUE)
+  )
+print(survey_q17_summary)
 ```
 
 KW test
@@ -2198,6 +2390,9 @@ KW test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q17_value ~ group, data = survey_q17)
 print(kruskal_test)
+# Effect size
+kw_es  <- kruskal_effsize(q17_value ~ group, data = survey_q17, ci = TRUE)
+print(kw_es)
 ```
 
 Plot the distribution of different groups
@@ -2205,9 +2400,18 @@ Plot the distribution of different groups
 # histogram including all participants
 ggplot(survey_q17, aes(x = q17_value)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+    geom_text(
+    stat      = "count",
+    aes(label = scales::percent(after_stat(count / total_respondents), accuracy = 0.1)),
+    position  = position_dodge(width = 0.9),
+    vjust     = -0.5,
+    size      = 3
+  ) +
   # facet_wrap(~ group) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.2)))+
   labs(title = "Qxx.17 Self-reported likelihood of exactly 2.6% distribution",
-       x = "Qxx.17",
+       x = "Responses",
        y = "Count") +
   scale_x_continuous(breaks = as.numeric(names(likelihood_labels)), 
                      labels = likelihood_labels) +
@@ -2218,6 +2422,8 @@ ggplot(survey_q17, aes(x = q17_value)) +
 ggplot(survey_q17, aes(x = factor(q17_value), fill = factor(group))) +
   geom_bar(position = "dodge") +
   # facet_wrap(~ group) +
+    scale_y_continuous(
+    expand = expansion(mult = c(0, 0.2)))+
   # add labels
   scale_x_discrete(labels=likelihood_labels) +
   labs(
@@ -2230,6 +2436,35 @@ ggplot(survey_q17, aes(x = factor(q17_value), fill = factor(group))) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
+## Qxx.19 Rationale for the likelihood of inflation being exactly 2.6%
+What tells you that the inflation in 2026Q2 is likely or unlikely to be exactly 2.6%? (Please select the option that best reflects your belief, even if other answers may also seem reasonable.) - Selected Choice\
+Variable: categorical\
+Method: contingency table + Not comparable across group\
+Function:
+```{r}
+plot_survey_q19 <- function(survey_data, question_header){
+  survey_q19 <- survey_data[, c(question_header, "group")]
+  survey_q19_contingency <- table(survey_q19[[question_header]], survey_q19$group)
+  
+  # visualise the contingency table as a bar plot
+  ggplot(as.data.frame(survey_q19_contingency), aes(x = Var1, y = Freq, fill = Var2)) +  geom_text(aes(label = Freq),
+                 vjust = -0.25                                                                                  )+
+    geom_bar(stat = "identity", position = "dodge") +
+    labs(title = paste("Qxx.19 Rationale for the likelihood of inflation being exactly 2.6% -", question_header),
+         x = "Response",
+         y = "Count",
+         fill = "Group") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+plot_survey_q19(controlled_group, "Q4.19")
+plot_survey_q19(error_bar, "Q6.19")
+plot_survey_q19(shaded_bar, "Q8.19")
+plot_survey_q19(fanchart_slice, "Q10.19")
+plot_survey_q19(bell_curve, "Q12.19")
+```
+
+
 ## Qxx.21 Self-reported likelihood of inflation being between 1.9% and 3.3%
 How likely do you think it is that the inflation will be between 1.9% and 3.3%?\
 *ascending value-increasing likelihood*\
@@ -2250,14 +2485,30 @@ for (i in seq_along(group_list)) {
 survey_q21$q21_value <- as.numeric(survey_q21$q21_value)
 ```
 
+Summary Table
+```{r}
+survey_q21_summary <- survey_q21 %>% 
+  group_by(group) %>%
+  summarise(
+    median = median(q21_value, na.rm = TRUE),
+    IQR    = IQR(q21_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q21_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q21_value, 0.75, na.rm = TRUE)
+  )
+print(survey_q21_summary)
+```
 KW test
 ```{r}
+# summary(survey_q21)
 # check normality --> the data is not normally distributed
 # shapiro.test(survey_q21$q21_value)
 
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q21_value ~ group, data = survey_q21)
 print(kruskal_test)
+# Effect size
+kw_es  <- kruskal_effsize(q21_value ~ group, data = survey_q21, ci = TRUE)
+print(kw_es)
 ```
 Plot the distribution of different groups
 ```{r}
@@ -2309,8 +2560,23 @@ for (i in seq_along(group_list)) {
   survey_q22 <- rbind(survey_q22, temp_table)
 }
 survey_q22$q22_value <- as.numeric(survey_q22$q22_value)
+summary(survey_q22$q22_value)
+
 ```
 
+Summary Table
+```{r}
+survey_q22_summary <- survey_q22 %>% 
+  group_by(group) %>%
+  summarise(
+    median = median(q22_value, na.rm = TRUE),
+    IQR    = IQR(q22_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q22_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q22_value, 0.75, na.rm = TRUE),
+    mean   = mean(q22_value, na.rm = TRUE),
+  )
+print(survey_q22_summary)
+```
 KW test
 ```{r}
 # check normality --> the data is not normally distributed
@@ -2319,6 +2585,10 @@ KW test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q22_value ~ group, data = survey_q22)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(q22_value ~ group, data = survey_q22, ci = TRUE)
+print(kw_es)
 
 # Post-hoc test
 dunnTest(q22_value ~ group, data = survey_q22, method = "bonferroni")
@@ -2373,15 +2643,37 @@ for (i in seq_along(group_list)) {
   survey_q23 <- rbind(survey_q23, temp_table)
 }
 survey_q23$q23_value <- as.numeric(survey_q23$q23_value)
+summary(survey_q23$q23_value)
 ```
+Summary Table
+```{r}
+survey_q23_summary <- survey_q23 %>% 
+  group_by(group) %>%
+  summarise(
+    median = median(q23_value, na.rm = TRUE),
+    IQR    = IQR(q23_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q23_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q23_value, 0.75, na.rm = TRUE)
+  )
+print(survey_q23_summary)
+```
+
+
 KW test
 ```{r}
 # check normality --> the data is not normally distributed
 # shapiro.test(survey_q23$q23_value)
 
+# initial check
+summary(survey_q23)
+
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q23_value ~ group, data = survey_q23)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(q23_value ~ group, data = survey_q23, ci = TRUE)
+print(kw_es)
 ```
 Plot the distribution of different groups
 ```{r}
@@ -2416,6 +2708,128 @@ ggplot(survey_q23, aes(x = q23_value)) +
 ```
 
 
+## ! Qxx.24 Ranking
+Based on the inflation forecast provided, please rank the following inflation rates from most likely to least likely to occur: 0.8%, 2.5%, 3.9% and 6.5%. - 0.8%\
+*Lower mean rank = more preferred*\
+Method: Mean Rank
+```{r}
+# combine data from different groups
+survey_q24 <- controlled_group[, c("Q4.24_1", "Q4.24_2", "Q4.24_3", "Q4.24_4")]
+survey_q24 <- as.data.frame(lapply(survey_q24, as.numeric))
+mean_rank <- colMeans(survey_q24, na.rm = TRUE)
+
+rank_summary_controlled <- data.frame(
+  Item = c("0.8%", "2.5%", "3.9%", "6.5%"),
+  MeanRank = mean_rank
+)
+```
+combine into one table
+```{r}
+# main code
+q24_prefixes <- list("Q4.24", "Q6.24", "Q8.24", "Q10.24", "Q12.24")
+rank_summary <- data.frame(
+  Item = c("0.8%", "2.5%", "3.9%", "6.5%")
+)
+survey_q24 <- data.frame()
+
+for (i in seq_along(group_list)) {
+  group_name <- names(group_list)[i]
+  df <- group_list[[i]]
+  q_cols <- paste0(q24_prefixes[[i]], "_", 1:4)
+  temp_table <- df[, c(q_cols, "group", "treatment")]
+  # combine the data
+  names(temp_table) <- c("Qxx.24_1", "Qxx.24_2", "Qxx.24_3", "Qxx.24_4", "group", "treatment")
+  temp_table[, c("Qxx.24_1", "Qxx.24_2", "Qxx.24_3", "Qxx.24_4")] <-
+  lapply(temp_table[, c("Qxx.24_1", "Qxx.24_2", "Qxx.24_3", "Qxx.24_4")], as.numeric)
+  survey_q24 <- rbind(survey_q24, temp_table)
+
+  # mean rank
+  df <- as.data.frame(lapply(df[,q_cols], as.numeric))
+  mean_rank <- colMeans(df, na.rm = TRUE)
+  rank_summary[[group_name]] <- mean_rank
+}
+
+# overall means
+overall_means <- rowMeans(rank_summary[, -1], na.rm = TRUE)
+rank_summary <- cbind(rank_summary, overall = overall_means)
+
+  # correct answer
+survey_q24_correct_prop <- survey_q24 %>%
+  group_by(group) %>%
+  summarise(
+    total = n(),
+    correct = sum(
+      Qxx.24_1 == 3 & Qxx.24_2 == 1 & Qxx.24_3 == 2 & Qxx.24_4 == 4,
+      na.rm = TRUE
+    ),
+    proportion_correct = correct / total,
+    .groups = "drop"
+  )
+```
+proportion test
+```{r}
+prop.test(
+  x = survey_q24_correct_prop$correct,
+  n = survey_q24_correct_prop$total
+)
+# pairwise proportion test
+pairwise.prop.test(
+  x = survey_q24_correct_prop$correct,
+  n = survey_q24_correct_prop$total,
+  p.adjust.method = "bonferroni" # or "holm", "BH"
+)
+```
+
+Proportion of correct answer
+```{r}
+survey_q24 <- controlled_group[, c("Q4.24_1", "Q4.24_2", "Q4.24_3", "Q4.24_4")]
+survey_q24 <- as.data.frame(lapply(survey_q24, as.numeric))
+survey_q24_correct <- survey_q24[survey_q24$Q4.24_1 == 3 & survey_q24$Q4.24_2 == 1 & survey_q24$Q4.24_3 == 2 & survey_q24$Q4.24_4 == 4, ]
+proportion_correct <- nrow(survey_q24_correct) / nrow(survey_q24)
+print(proportion_correct)
+```
+Visualisation Proportion
+```{r}
+ggplot(survey_q24_correct_prop, aes(x = group, y = proportion_correct, fill = group)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(proportion_correct, accuracy = 0.1)), 
+            vjust = -0.5, size = 3) +
+  labs(
+    title = "Qxx.24 Proportion of Correct Answer by Group",
+    x = "Group",
+    y = "Proportion of Correct Answers"
+  ) +
+    scale_y_continuous(
+    expand = expansion(mult = c(0, 0.2)) 
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Visualisation Ranking
+```{r}
+df_long <- rank_summary %>% 
+  pivot_longer(-Item, names_to = "Group", values_to = "MeanRank") %>% 
+  mutate(
+    # Order items by their overall best rank (smallest = best)
+    Item  = factor(Item, levels = rank_summary %>% arrange(overall) %>% pull(Item)),
+    # Keep groups in the order they appear in the data-frame
+    Group = factor(Group, levels = names(rank_summary)[-1])
+  )
+
+ggplot(df_long, aes(Group, Item, fill = MeanRank)) +
+  geom_tile(colour = "white", linewidth = .4) +
+  geom_text(aes(label = round(MeanRank, 2)), size = 3) +
+  scale_fill_distiller(palette = "Blues", direction = 1, 
+                       name = "Mean rank", limits = c(1, 4), 
+                       breaks = 1:4) +
+  labs(title = "Mean rank by group (1 = Most Likely)") +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
 ## Qxx.26 Accuracy of central estimate
 On a scale of 1 to 10, where 1 means not accurate at all and 10 means very accurate, how accurate do you think the central estimate in the graph is?\
 *1-Not accurate at all; 10-Very accurate*\
@@ -2429,12 +2843,28 @@ survey_q26_list <- list("Q4.26_1","Q6.26_1", "Q8.26_1", "Q10.26_1", "Q12.26_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_q26_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("q26_value", "group")
+  temp_table <- df[, c(col, "group", "treatment")]
+  names(temp_table) <- c("q26_value", "group", "treatment")
   survey_q26 <- rbind(survey_q26, temp_table)
 }
 survey_q26$q26_value <- as.numeric(survey_q26$q26_value)
+summary(survey_q26$q26_value)
 ```
+Summary Table
+```{r}
+survey_q26_summary <- survey_q26 %>% 
+  group_by(group) %>%
+  summarise(
+    mean = mean(q26_value, na.rm = TRUE),
+    median = median(q26_value, na.rm = TRUE),
+    sd = sd(q26_value, na.rm = TRUE),
+    IQR    = IQR(q26_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q26_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q26_value, 0.75, na.rm = TRUE)
+  )
+print(survey_q26_summary)
+```
+
 Statistical test
 ```{r}
 # Initial Check
@@ -2447,19 +2877,15 @@ Statistical test
 kruskal_test <- kruskal.test(q26_value ~ group, data = survey_q26)
 print(kruskal_test)
 
+# Effect size
+kw_es  <- kruskal_effsize(q26_value ~ group, data = survey_q26, ci = TRUE)
+print(kw_es)
 ```
-Summary statistics
+Combine the treatment groups
 ```{r}
-# Summary statistics
-survey_q26_summary <- survey_q26 %>%
-  group_by(group) %>%
-  summarise(
-    mean = mean(q26_value, na.rm = TRUE),
-    median = median(q26_value, na.rm = TRUE),
-    sd = sd(q26_value, na.rm = TRUE)
-  )
+kruskal_test <- kruskal.test(q26_value ~ treatment, data = survey_q26)
+print(kruskal_test)
 ```
-
 
 Plot the distribution of different groups
 ```{r}
@@ -2490,11 +2916,12 @@ survey_q27_list <- list("Q4.27_1","Q6.27_1", "Q8.27_1", "Q10.27_1", "Q12.27_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_q27_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("q27_value", "group")
+  temp_table <- df[, c(col, "group", "treatment")]
+  names(temp_table) <- c("q27_value", "group", "treatment")
   survey_q27 <- rbind(survey_q27, temp_table)
 }
 survey_q27$q27_value <- as.numeric(survey_q27$q27_value)
+summary(survey_q27$q27_value)
 ```
 Statistical test
 ```{r}
@@ -2505,7 +2932,16 @@ Statistical test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q27_value ~ group, data = survey_q27)
 print(kruskal_test)
+# Effect size
+kw_es  <- kruskal_effsize(q27_value ~ group, data = survey_q27, ci = TRUE)
+print(kw_es)
 ```
+Combine the treatment groups
+```{r}
+kruskal_test <- kruskal.test(q27_value ~ treatment, data = survey_q27)
+print(kruskal_test)
+```
+
 Summary statistics
 ```{r}
 # Summary statistics
@@ -2514,8 +2950,12 @@ survey_q27_summary <- survey_q27 %>%
   summarise(
     mean = mean(q27_value, na.rm = TRUE),
     median = median(q27_value, na.rm = TRUE),
-    sd = sd(q27_value, na.rm = TRUE)
+    sd = sd(q27_value, na.rm = TRUE),
+    IQR    = IQR(q27_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q27_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q27_value, 0.75, na.rm = TRUE)
   )
+print(survey_q27_summary)
 ```
 Plot the distribution of different groups
 ```{r}
@@ -2533,6 +2973,49 @@ ggplot(survey_q27, aes(x = factor(q27_value), fill = factor(group))) +
 ```
 
 
+## Qxx.28 Rationale for certainty/uncertainty of the forecast
+Why do you think that the forecast is more or less uncertain? (Select all that apply)\
+Variable: categorical\
+Method: contingency table + Not comparable across group\
+Function:
+```{r}
+plot_survey_q28 <- function(survey_data, question_header){
+  survey_q28 <- survey_data %>%
+    # select(all_of(question_header), group) %>%
+    mutate(
+      !!question_header := lapply(
+        as.character(.data[[question_header]]),
+        function(x) {
+          if (is.na(x) || x == "") return(list())
+          nums <- strsplit(x, ",")[[1]]
+          as.list(as.numeric(trimws(nums)))
+        }
+      )
+    ) %>%
+    unnest(cols = all_of(question_header)) %>%
+    group_by(group, value = .data[[question_header]]) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    mutate(
+      value = as.numeric(value)
+    )
+  # plot the bar chart
+  ggplot(survey_q28, aes(x = factor(value), y = count, fill = group)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = count), vjust = -0.25, position = position_dodge(0.9)) +
+    labs(
+      title = paste("Qxx.28 Rationale for certainty/uncertainty of the forecast -", question_header),
+      x = "Response",
+      y = "Count",
+      fill = "Group"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  # return(survey_q28)
+}
+
+plot_survey_q28(controlled_group, "Q4.28")
+```
+
 ## Qxx.29 Representativeness of the uncertainty
 On a scale of 1 to 10, where 1 means not representative at all and 10 means very representative, how representative do you think the uncertainty being communicated is (i.e., how well the given information reflects the true variability or uncertainty of the forecast?)\
 *1-Not representative at all; 10-Very representative*\
@@ -2546,8 +3029,8 @@ survey_q29_list <- list("Q4.29_1","Q6.29_1", "Q8.29_1", "Q10.29_1", "Q12.29_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_q29_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("q29_value", "group")
+  temp_table <- df[, c(col, "group", "treatment")]
+  names(temp_table) <- c("q29_value", "group", "treatment")
   survey_q29 <- rbind(survey_q29, temp_table)
 }
 survey_q29$q29_value <- as.numeric(survey_q29$q29_value)
@@ -2562,7 +3045,18 @@ Statistical test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q29_value ~ group, data = survey_q29)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(q29_value ~ group, data = survey_q29, ci = TRUE)
+print(kw_es)
+
 ```
+Combine the treatment groups
+```{r}
+kruskal_test <- kruskal.test(q29_value ~ treatment, data = survey_q29)
+print(kruskal_test)
+```
+
 Summary statistics
 ```{r}
 # Summary statistics
@@ -2571,7 +3065,10 @@ survey_q29_summary <- survey_q29 %>%
   summarise(
     mean = mean(q29_value, na.rm = TRUE),
     median = median(q29_value, na.rm = TRUE),
-    sd = sd(q29_value, na.rm = TRUE)
+    sd = sd(q29_value, na.rm = TRUE),
+    IQR    = IQR(q29_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q29_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q29_value, 0.75, na.rm = TRUE)
   )
 ```
 Plot the distribution of different groups
@@ -2594,7 +3091,7 @@ On a scale of 1 to 10, where 1 means very difficult and 10 means very easy, how 
 *1-Very difficult; 10-Very easy*\
 Variable: continuous\
 Method: ANNOVA test or KW test (depends on whether it's normally distributed)\
-**Result: Fail to reject the null hypothesis. There are statistical difference between control group vs. fan chart slice group; control group vs. bell curve; error bar group vs. bell curve group.**
+**Result: There are statistical difference between control group vs. fan chart slice group; control group vs. bell curve; error bar group vs. bell curve group.**
 ```{r}
 # combine data from different groups
 survey_q30 <- data.frame()
@@ -2602,8 +3099,8 @@ survey_q30_list <- list("Q4.30_1","Q6.30_1", "Q8.30_1", "Q10.30_1", "Q12.30_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_q30_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("q30_value", "group")
+  temp_table <- df[, c(col, "group","treatment")]
+  names(temp_table) <- c("q30_value", "group", "treatment")
   survey_q30 <- rbind(survey_q30, temp_table)
 }
 survey_q30$q30_value <- as.numeric(survey_q30$q30_value)
@@ -2618,6 +3115,11 @@ Statistical test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q30_value ~ group, data = survey_q30)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(q30_value ~ group, data = survey_q30, ci = TRUE)
+print(kw_es)
+
 # Post-hoc test
 dunnTest(q30_value ~ group, data = survey_q30, method = "bonferroni")
 ```
@@ -2629,7 +3131,10 @@ survey_q30_summary <- survey_q30 %>%
   summarise(
     mean = mean(q30_value, na.rm = TRUE),
     median = median(q30_value, na.rm = TRUE),
-    sd = sd(q30_value, na.rm = TRUE)
+    sd = sd(q30_value, na.rm = TRUE),
+    IQR    = IQR(q30_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q30_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q30_value, 0.75, na.rm = TRUE)
   )
 ```
 
@@ -2647,6 +3152,20 @@ ggplot(survey_q30, aes(x = factor(q30_value), fill = factor(group))) +
   ) +
   theme_minimal()
 ```
+density plot
+```{r}
+# Density plot
+ggplot(survey_q30, aes(x = q30_value, fill = group)) +
+  geom_density(alpha = 0.5) +
+  labs(
+    title = "Qxx.30 Density Plot of Readability of the Forecast by Group",
+    x = "Qxx.30 Response",
+    y = "Density",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
 ## Qxx.31 Trust of the Forecast
 On a scale of 1 to 10, where 1 means you don’t trust the inflation forecast at all and 10 means you fully trust it, how much do you trust the inflation forecast shown in the graph?\
 *1-Don't trust at all; 10-Fully trust*\
@@ -2660,11 +3179,12 @@ survey_q31_list <- list("Q4.31_1","Q6.31_1", "Q8.31_1", "Q10.31_1", "Q12.31_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_q31_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("q31_value", "group")
+  temp_table <- df[, c(col, "group","treatment")]
+  names(temp_table) <- c("q31_value", "group", "treatment")
   survey_q31 <- rbind(survey_q31, temp_table)
 }
 survey_q31$q31_value <- as.numeric(survey_q31$q31_value)
+summary(survey_q31$q31_value)
 ```
 
 Statistical test
@@ -2678,7 +3198,17 @@ Statistical test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(q31_value ~ group, data = survey_q31)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(q31_value ~ group, data = survey_q31, ci = TRUE)
+print(kw_es)
 ```
+Combine the treatment groups
+```{r}
+kruskal_test <- kruskal.test(q31_value ~ treatment, data = survey_q31)
+print(kruskal_test)
+```
+
 Summary statistics
 ```{r}
 # Summary statistics
@@ -2687,8 +3217,13 @@ survey_q31_summary <- survey_q31 %>%
   summarise(
     mean = mean(q31_value, na.rm = TRUE),
     median = median(q31_value, na.rm = TRUE),
-    sd = sd(q31_value, na.rm = TRUE)
+    sd = sd(q31_value, na.rm = TRUE),
+    IQR    = IQR(q31_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q31_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q31_value, 0.75, na.rm = TRUE)
+    
   )
+print(survey_q31_summary)
 ```
 
 Plot the distribution of different groups
@@ -2804,6 +3339,21 @@ for (i in seq_along(skewed_group_list)) {
 }
 survey_q34$q34_value <- as.numeric(survey_q34$q34_value)
 ```
+Summary Table
+```{r}
+survey_q34_summary <- survey_q34 %>% 
+  group_by(group) %>%
+  summarise(
+    median = median(q34_value, na.rm = TRUE),
+    IQR    = IQR(q34_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(q34_value, 0.25, na.rm = TRUE), 
+    Q3     = quantile(q34_value, 0.75, na.rm = TRUE),
+    mean   = mean(q34_value, na.rm = TRUE)
+  )
+print(survey_q34_summary)
+```
+
+
 KW test
 ```{r}
 # check normality --> the data is not normally distributed
@@ -2844,6 +3394,98 @@ ggplot(survey_q34, aes(x = q34_value)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+## Qxx.35 Ranking for 26Q3
+Based on the inflation forecast provided, please rank the following inflation rates from most likely to least likely to occur: 1.1%, 2.6%, 3.3% and 4.1%. - 4.1%\
+*Lower mean rank = more preferred*\
+Method: Mean Rank
+```{r}
+q35_prefixes <- list("Q6.35", "Q8.35", "Q10.35", "Q12.35")
+rank_summary_skewed <- data.frame(
+  Item = c("1.1%", "2.6%", "3.3%", "4.1%")
+)
+survey_q35 <- data.frame()
+for (i in seq_along(skewed_group_list)) {
+  group_name <- names(skewed_group_list)[i]
+  df <- skewed_group_list[[i]]
+  q_cols <- paste0(q35_prefixes[[i]], "_", 5:8)
+  temp_table <- df[, c(q_cols, "group")]
+  # combine the data
+  names(temp_table) <- c("Qxx.35_5", "Qxx.35_6", "Qxx.35_7", "Qxx.35_8", "group")
+  temp_table[, c("Qxx.35_5", "Qxx.35_6", "Qxx.35_7", "Qxx.35_8")] <-
+    lapply(temp_table[, c("Qxx.35_5", "Qxx.35_6", "Qxx.35_7", "Qxx.35_8")], as.numeric)
+  survey_q35 <- rbind(survey_q35, temp_table)
+
+  # mean rank
+  df <- as.data.frame(lapply(df[,q_cols], as.numeric))
+  mean_rank <- colMeans(df, na.rm = TRUE)
+  rank_summary_skewed[[group_name]] <- mean_rank
+}
+# overall means
+overall_means <- rowMeans(rank_summary_skewed[, -1], na.rm = TRUE)
+rank_summary_skewed <- cbind(rank_summary_skewed, Overall = overall_means)
+# correct answer
+survey_q35_correct_prop <- survey_q35 %>%
+  group_by(group) %>%
+  summarise(
+    total = n(),
+    correct = sum(
+      Qxx.35_5 == 4 & Qxx.35_6 == 1 & Qxx.35_7 == 2 & Qxx.35_8 == 3,
+      na.rm = TRUE
+    ),
+    proportion_correct = correct / total,
+    .groups = "drop"
+  )
+
+```
+proportion test
+```{r}
+prop.test(
+  x = survey_q35_correct_prop$correct,
+  n = survey_q35_correct_prop$total
+)
+```
+Visualisation Proportion
+```{r}
+ggplot(survey_q35_correct_prop, aes(x = group, y = proportion_correct, fill = group)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(proportion_correct, accuracy = 0.1)), 
+            vjust = -0.5, size = 3) +
+  labs(
+    title = "Qxx.35 Proportion of Correct Answer by Group",
+    x = "Group",
+    y = "Proportion of Correct Answers"
+  ) +
+    scale_y_continuous(
+    expand = expansion(mult = c(0, 0.2)) 
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Visualisation Ranking
+```{r}
+df_long_skewed <- rank_summary_skewed %>% 
+  pivot_longer(-Item, names_to = "Group", values_to = "MeanRank") %>% 
+  mutate(
+    # Order items by their overall best rank (smallest = best)
+    Item  = factor(Item, levels = rank_summary_skewed %>% arrange(Overall) %>% pull(Item)),
+    # Keep groups in the order they appear in the data-frame
+    Group = factor(Group, levels = names(rank_summary_skewed)[-1])
+  )
+
+ggplot(df_long_skewed, aes(Group, Item, fill = MeanRank)) +
+  geom_tile(colour = "white", linewidth = .4) +
+  geom_text(aes(label = round(MeanRank, 2)), size = 3) +
+  scale_fill_distiller(palette = "Blues", direction = 1, 
+                       name = "Mean rank", limits = c(1, 4), 
+                       breaks = 1:4) +
+  labs(title = "Mean rank by group (1 = Most Likely)") +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
 ## Qxx.36 Deviation from central estimate
 Based on the inflation forecast provided,  do you think there is a higher risk of inflation exceeding the central estimate or of being less than this central estimate?\
 Definitive Correct Answer - 1\
@@ -3017,8 +3659,8 @@ survey_d3_list <- list("Q5.3","Q7.3", "Q9.3", "Q11.3", "Q13.3")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_d3_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("d3_value", "group")
+  temp_table <- df[, c(col, "group","treatment")]
+  names(temp_table) <- c("d3_value", "group", "treatment")
   survey_d3 <- rbind(survey_d3, temp_table)
 }
 survey_d3$d3_value <- as.numeric(survey_d3$d3_value)
@@ -3029,8 +3671,20 @@ survey_d3_contingency <- table(survey_d3$d3_value, survey_d3$group)
 print(survey_d3_contingency)
 # chi-squared test
 chisq.test(survey_d3_contingency)
+# prop.test
+# survey_d3_correct <- survey_d3_contingency[1,]
+# survey_d3_group_total <- colSums(survey_d3_contingency)
+# prop.test(survey_d3_correct, survey_d3_group_total)
+```
+Combine all treatment groups (p-value = 0.7548)
+```{r}
+survey_d3_contingency <- table(survey_d3$d3_value, survey_d3$treatment)
+print(survey_d3_contingency)
+# chi-squared test
+chisq.test(survey_d3_contingency)
 
 ```
+
 Plot proportion bar plot across different groups
 ```{r}
 survey_d3_prop  <- as.data.frame(survey_d3_contingency)
@@ -3087,13 +3741,13 @@ survey_d4_list <- list("Q5.4_1","Q7.4_1", "Q9.4_1", "Q11.4_1", "Q13.4_1")
 for (i in seq_along(group_list)) {
   df <- group_list[[i]]
   col <- survey_d4_list[[i]]
-  temp_table <- df[, c(col, "group")]
-  names(temp_table) <- c("d4_value", "group")
+  temp_table <- df[, c(col, "group","treatment")]
+  names(temp_table) <- c("d4_value", "group", "treatment")
   survey_d4 <- rbind(survey_d4, temp_table)
 }
 survey_d4$d4_value <- as.numeric(survey_d4$d4_value)
 ```
-Statistical test
+Statistical test (p-value = 0.1333)
 ```{r}
 # Initial Check
 # summary(survey_d4$d4_value)
@@ -3104,6 +3758,19 @@ Statistical test
 kruskal_test <- kruskal.test(d4_value ~ group, data = survey_d4)
 print(kruskal_test)
 ```
+Combine all treatment groups (p-value = 0.5824)
+```{r}
+# run Kruskal-Wallis test
+kruskal_test <- kruskal.test(d4_value ~ treatment, data = survey_d4)
+print(kruskal_test)
+
+survey_d4_test <- survey_d4 %>%
+  group_by(treatment) %>%
+  summarise(
+    mean = mean(d4_value, na.rm = TRUE))
+```
+
+
 Summary statistics
 ```{r}
 # Summary statistics
@@ -3112,7 +3779,10 @@ survey_d4_summary <- survey_d4 %>%
   summarise(
     mean = mean(d4_value, na.rm = TRUE),
     median = median(d4_value, na.rm = TRUE),
-    sd = sd(d4_value, na.rm = TRUE)
+    sd = sd(d4_value, na.rm = TRUE),
+    IQR    = IQR(d4_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(d4_value, 0.25, na.rm = TRUE),
+    Q3     = quantile(d4_value, 0.75, na.rm = TRUE)
   )
 ```
 Plot the distribution of different groups
@@ -3376,8 +4046,12 @@ survey_d9_summary <- survey_d9 %>%
   summarise(
     mean = mean(d9_value, na.rm = TRUE),
     median = median(d9_value, na.rm = TRUE),
-    sd = sd(d9_value, na.rm = TRUE)
+    sd = sd(d9_value, na.rm = TRUE),
+    IQR    = IQR(d9_value,   na.rm = TRUE),  # same as Q3 − Q1
+    Q1     = quantile(d9_value, 0.25, na.rm = TRUE),
+    Q3     = quantile(d9_value, 0.75, na.rm = TRUE)
   )
+print(survey_d9_summary)
 ```
 
 Plot the distribution of different groups
@@ -3542,7 +4216,26 @@ ggplot(survey_d13, aes(x = factor(d13_value), fill = factor(group))) +
 
 # Statistical Testing <a name="statistical-testing"></a>
 ## Basics
-Type I error- false positives (saying there's a difference when there isn't)
+Type I error- false positives (saying there's a difference when there isn't) Usually set to 0.05\\
+Type II error: risk of a false negative (failing to detect a real effect). β = 1 – power = 0.20 \\
+Power = 1 - β = 0.80 (80% chance of detecting a true effect)\\
+The classical null‑hypothesis test (p-value) only tells whether the data are incompatible with zero effect. Pairwise comparison for effect size with confidence interval shows whether the results big enough to matter. -- see if the interval include the Cohen’s d value we set before.
+## Power Caluculation 
+Cohen’s d / Hedges’ g are pairwise numbers, whereas Cohen’s f describe omnibus gap across ≥3 groups\\
+ f (≈d/2)
+They are calculated by (effect)/standard deviation.\
+This can be estimated through pilot studies 
+```{r}
+library(pwr)
+
+N_total <- 309
+sens <- pwr.anova.test(k = 5,
+                       n = N_total / 5*1.15,   # ~10–15 % cushion for KW test
+                       sig.level = 0.05,
+                       power = 0.80)      # f left NULL
+sens
+```
+
 ## Chi-squared test
 ### Post-hoc test
 1. Standardized residuals
