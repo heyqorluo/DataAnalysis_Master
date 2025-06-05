@@ -15,25 +15,12 @@ output:
 7. [Decision-making](#decision-making)
 
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
-
-```{r}
-plot(cars)
-```
-
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
 
 ------------------------------------------------------------------------
 # README
 - run the Load and split the data chunk first
 - results was filtered based on Q3.9 - whether respondents understand the concept of inflation 
-- ! : We can reject the null hypothesis.\
+- ! : We reject the null hypothesis.\
 
 
 # Load and split the data <a name="load-and-split-the-data"></a>
@@ -195,7 +182,7 @@ ggplot(time_duration_table, aes(x = `Duration (in mins)`, fill = group)) +
 # histogram
 ggplot(time_duration_table, aes(x = `Duration (in mins)`)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
-  facet_wrap(~ group) +
+  # facet_wrap(~ group) +
   labs(title = "Distribution of Duration by Group",
        x = "Duration (e.g. in minutes)",
        y = "Count") +
@@ -301,7 +288,7 @@ ggplot(q3_4_prop, aes(x = as.factor(`Q3.4`), y = Proportion, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge") +
   # facet_wrap(~ Group) +
   labs(
-    title = "Q3.4 Highest Education Level Propotion Plot across Groups",
+    title = "Q3.4 Highest Education Level Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -389,7 +376,7 @@ ggplot(q3_5_prop, aes(x = as.factor(`Q3.5`), y = Proportion, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge") +
   # facet_wrap(~ Group) +
   labs(
-    title = "Q3.5 Employee Status Propotion Plot across Groups",
+    title = "Q3.5 Employee Status Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -521,7 +508,7 @@ q3_6_prop <- q3_6_prop %>%
 ggplot(q3_6_prop, aes(x = factor(Q3.6), y = Proportion, fill = factor(group))) +
   geom_col(position = "dodge") +
   labs(
-    title = "Q3.6 Economics Education Propotion Plot across Groups",
+    title = "Q3.6 Economics Education Proportion Plot across Groups",
     x = "Response",
     y = "Proportion",
     fill = "Group"
@@ -567,7 +554,7 @@ q3_7_prop <- as.data.frame(q3_7_contingency) %>%
 ggplot(q3_7_prop, aes(x = factor(`Q3.7`), y = Proportion, fill = factor(group))) + 
   geom_col(position = "dodge") +
   labs(
-    title = "Q3.7 Financial Activities Propotion Plot across Groups",
+    title = "Q3.7 Financial Activities Proportion Plot across Groups",
     x = "Response",
     y = "Proportion",
     fill = "Group"
@@ -664,7 +651,7 @@ ggplot(q3_8_prop, aes(x = as.factor(`Q3.8_label`), y = Proportion, fill = Group)
   geom_col(position = "dodge") +
   # facet_wrap(~ Group) +
   labs(
-    title = "Q3.8 Awareness of Economics Propotion Plot across Groups",
+    title = "Q3.8 Awareness of Economics Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -814,7 +801,7 @@ q3_12_prop <- q3_12_prop %>%
 
 ggplot(q3_12_prop, aes(x = as.factor(`Q3.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.12 Frequency of Checking Current Inflation Propotion Plot across Groups",
+    title = "Q3.12 Frequency of Checking Current Inflation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -885,7 +872,7 @@ q3_13_prop <- q3_13_prop %>%
 ggplot(q3_13_prop, aes(x = factor(`Q3.13_label`), y = Proportion, fill = group)) +
   geom_col(position = "dodge") +
   labs(
-    title = "Q3.13 Source of Current Inflation Propotion Plot across Groups",
+    title = "Q3.13 Source of Current Inflation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion",
     fill = "Group"
@@ -951,7 +938,7 @@ q3_14_prop <- q3_14_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(q3_14_prop, aes(x = as.factor(`Q3.14_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.14 Impact of Current Inflation Propotion Plot across Groups",
+    title = "Q3.14 Impact of Current Inflation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1012,7 +999,7 @@ q3_15_prop <- q3_15_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(q3_15_prop, aes(x = as.factor(`Q3.15_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.15 Response to Current Inflation Propotion Plot across Groups",
+    title = "Q3.15 Response to Current Inflation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1074,7 +1061,7 @@ q3_16_prop <- q3_16_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(q3_16_prop, aes(x = as.factor(`Q3.16_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.16 Frequency of Checking Inflation Forecasts Propotion Plot across Groups",
+    title = "Q3.16 Frequency of Checking Inflation Forecasts Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1142,7 +1129,7 @@ q3_17_prop <- q3_17_prop %>%
 ggplot(q3_17_prop, aes(x = factor(`Q3.17_label`), y = Proportion, fill = group)) +
   geom_col(position = "dodge") +
   labs(
-    title = "Q3.17 Source of Inflation Forecasts Propotion Plot across Groups",
+    title = "Q3.17 Source of Inflation Forecasts Proportion Plot across Groups",
     x = "Response",
     y = "Proportion",
     fill = "Group"
@@ -1205,7 +1192,7 @@ q3_18_prop <- q3_18_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(q3_18_prop, aes(x = as.factor(`Q3.18_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.18 Impact of Inflation Forecasts Propotion Plot across Groups",
+    title = "Q3.18 Impact of Inflation Forecasts Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1265,7 +1252,7 @@ q3_19_prop <- q3_19_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(q3_19_prop, aes(x = as.factor(`Q3.19_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.19 Response to Inflation Forecasts Propotion Plot across Groups",
+    title = "Q3.19 Response to Inflation Forecasts Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1571,7 +1558,7 @@ survey_q3_prop <- survey_q3_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(survey_q3_prop, aes(x = as.factor(`Q3.3_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q3.3 Prior Expectation Propotion Plot across Groups",
+    title = "Q3.3 Prior Expectation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1637,7 +1624,7 @@ survey_q4_prop <- survey_q4_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(survey_q4_prop, aes(x = as.factor(`Q4.4_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   labs(
-    title = "Q4.4 Confliction with Prior Expectation Propotion Plot across Groups",
+    title = "Q4.4 Confliction with Prior Expectation Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1715,7 +1702,7 @@ survey_q6_prop <- survey_q6_prop %>%
 ggplot(survey_q6_prop, aes(x = as.factor(`Qxx.6_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.6 Probability of Being Exactly 2.6% Propotion Plot across Groups",
+    title = "Qxx.6 Probability of Being Exactly 2.6% Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1815,7 +1802,7 @@ survey_q7_prop <- survey_q7_prop %>%
 ggplot(survey_q7_prop, aes(x = as.factor(`Qxx.7_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.7 Probability of between 1.9% and 3.3% Propotion Plot across Groups",
+    title = "Qxx.7 Probability of between 1.9% and 3.3% Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -1910,7 +1897,7 @@ survey_q8_prop <- survey_q8_prop %>%
 ggplot(survey_q8_prop, aes(x = as.factor(`Qxx.8_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.8 Probability of between 3.3% and 5.6% Propotion Plot across Groups",
+    title = "Qxx.8 Probability of between 3.3% and 5.6% Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -2067,7 +2054,7 @@ survey_q11_prop <- survey_q11_prop %>%
 ggplot(survey_q11_prop, aes(x = as.factor(`Qxx.11_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.11 Probability of higher than 6% Propotion Plot across Groups",
+    title = "Qxx.11 Probability of higher than 6% Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -2148,7 +2135,7 @@ survey_q12_prop <- survey_q12_prop %>%
 ggplot(survey_q12_prop, aes(x = as.factor(`Qxx.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.12 Probability of higher than 3% Propotion Plot across Groups",
+    title = "Qxx.12 Probability of higher than 3% Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -2239,7 +2226,7 @@ survey_q14_prop <- survey_q14_prop %>%
 ggplot(survey_q14_prop, aes(x = as.factor(`Qxx.14_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.14 Probability of higher than 2% target Propotion Plot across Groups",
+    title = "Qxx.14 Probability of higher than 2% target Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -2325,7 +2312,7 @@ survey_q15_prop <- survey_q15_prop %>%
 ggplot(survey_q15_prop, aes(x = as.factor(`Qxx.15_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.15 Answer Propotion Plot across Groups",
+    title = "Qxx.15 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -2346,7 +2333,7 @@ ggplot(survey_q15, aes(x = q15_value)) +
   scale_x_continuous(breaks = seq(0, max(survey_q15$q15_value, na.rm = TRUE), by = 1)) +
   theme_minimal()
 ```
-## Qxx.17 Self-reported likelihood of exactly 2.6%
+17## Qxx.17 Self-reported likelihood of exactly 2.6%
 How likely do you think it is that the inflation will be exactly 2.6%?\
 *ascending value-increasing likelihood*\
 Variable: treat as continuous\
@@ -2709,7 +2696,7 @@ ggplot(survey_q23, aes(x = q23_value)) +
 
 
 ## ! Qxx.24 Ranking
-Based on the inflation forecast provided, please rank the following inflation rates from most likely to least likely to occur: 0.8%, 2.5%, 3.9% and 6.5%. - 0.8%\
+Based on the inflation forecast provided, please rank the following inflation rates from most likely to least likely to occur: 0.8%, 2.5%, 3.9% and 6.5%.\
 *Lower mean rank = more preferred*\
 Method: Mean Rank
 ```{r}
@@ -3290,7 +3277,7 @@ survey_q33_prop <- survey_q33_prop %>%
 ggplot(survey_q33_prop, aes(x = as.factor(`Qxx.33_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.33 Answer Propotion Plot across Groups",
+    title = "Qxx.33 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -3539,7 +3526,7 @@ survey_q36_prop <- survey_q36_prop %>%
 ggplot(survey_q36_prop, aes(x = as.factor(`Qxx.36_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.36 Answer Propotion Plot across Groups",
+    title = "Qxx.36 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -3621,7 +3608,7 @@ survey_q37_prop <- survey_q37_prop %>%
 ggplot(survey_q37_prop, aes(x = as.factor(`Qxx.37_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "Qxx.37 Answer Propotion Plot across Groups",
+    title = "Qxx.37 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -3702,13 +3689,17 @@ survey_d3_prop <- survey_d3_prop %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(survey_d3_prop, aes(x = as.factor(`D.3_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
+  geom_text(aes(label = scales::percent(Proportion, accuracy = 0.1)), 
+            position = position_dodge(width = 0.9), vjust = -0.5, size = 3) +
   labs(
-    title = "D.3 Answer Propotion Plot across Groups",
+    title = "D.3 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
    scale_fill_brewer(palette = "Set2")+
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+    expand = expansion(mult = c(0, 0.2)) 
+  )  +
   theme_minimal()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
@@ -3746,6 +3737,7 @@ for (i in seq_along(group_list)) {
   survey_d4 <- rbind(survey_d4, temp_table)
 }
 survey_d4$d4_value <- as.numeric(survey_d4$d4_value)
+summary(survey_d4$d4_value)
 ```
 Statistical test (p-value = 0.1333)
 ```{r}
@@ -3757,6 +3749,10 @@ Statistical test (p-value = 0.1333)
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(d4_value ~ group, data = survey_d4)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(d4_value ~ group, data = survey_d4, ci = TRUE)
+print(kw_es)
 ```
 Combine all treatment groups (p-value = 0.5824)
 ```{r}
@@ -3784,6 +3780,7 @@ survey_d4_summary <- survey_d4 %>%
     Q1     = quantile(d4_value, 0.25, na.rm = TRUE),
     Q3     = quantile(d4_value, 0.75, na.rm = TRUE)
   )
+print(survey_d4_summary)
 ```
 Plot the distribution of different groups
 ```{r}
@@ -3848,7 +3845,7 @@ survey_d6_prop <- survey_d6_prop %>%
 ggplot(survey_d6_prop, aes(x = as.factor(`D.6_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "D.6 Answer Propotion Plot across Groups",
+    title = "D.6 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -3918,7 +3915,7 @@ survey_d7_prop <- survey_d7_prop %>%
 ggplot(survey_d7_prop, aes(x = as.factor(`D.7_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "D.7 Answer Propotion Plot across Groups",
+    title = "D.7 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -3967,6 +3964,7 @@ print(chisq_result)
 ```
 Plot proportion bar plot across different groups
 ```{r}
+library(stringr)
 survey_d8_prop  <- as.data.frame(survey_d8_contingency)
 # rename columns
 names(survey_d8_prop) <- c("D.8", "Group", "Count")
@@ -3975,21 +3973,25 @@ survey_d8_prop <- survey_d8_prop %>%
   mutate(D.8_label = case_when(
     D.8 == "1" ~ "1-potential loss",
     D.8 == "2" ~ "2-potential gain",
-    D.8 == "3" ~ "3-potential loss and gain have the same impact"
+    D.8 == "3" ~ "3-potential loss and gain\ have the same impact"
   ))
 # calculate proportions within each group
 survey_d8_prop <- survey_d8_prop %>%
   group_by(Group) %>%
   mutate(Proportion = Count / sum(Count))
 ggplot(survey_d8_prop, aes(x = as.factor(`D.8_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
+   scale_x_discrete(labels = function(x) str_wrap(x, 20)) +
+  geom_text(aes(label = scales::percent(Proportion, accuracy = 0.1)), 
+            position = position_dodge(width = 0.9), vjust = -0.5, size = 2) +
   # facet_wrap(~Group)+
   labs(
-    title = "D.8 Answer Propotion Plot across Groups",
+    title = "D.8 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
    scale_fill_brewer(palette = "Set2")+
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = expansion(mult = c(0, 0.2)) ) +
   theme_minimal()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
@@ -4024,6 +4026,7 @@ for (i in seq_along(group_list)) {
   survey_d9 <- rbind(survey_d9, temp_table)
 }
 survey_d9$d9_value <- as.numeric(survey_d9$d9_value)
+summary(survey_d9$d9_value)
 ```
 Statistical test
 ```{r}
@@ -4035,6 +4038,11 @@ Statistical test
 # run Kruskal-Wallis test
 kruskal_test <- kruskal.test(d9_value ~ group, data = survey_d9)
 print(kruskal_test)
+
+# Effect size
+kw_es  <- kruskal_effsize(d9_value ~ group, data = survey_d9, ci = TRUE)
+print(kw_es)
+
 # Post-hoc test
 dunnTest(d9_value ~ group, data = survey_d9, method = "bonferroni")
 ```
@@ -4123,7 +4131,7 @@ survey_d12_prop <- survey_d12_prop %>%
 ggplot(survey_d12_prop, aes(x = as.factor(`D.12_label`), y = Proportion, fill = Group)) + geom_col(position = "dodge") +
   # facet_wrap(~Group)+
   labs(
-    title = "D.12 Answer Propotion Plot across Groups",
+    title = "D.12 Answer Proportion Plot across Groups",
     x = "Response",
     y = "Proportion"
   ) +
@@ -4209,7 +4217,7 @@ ggplot(survey_d13, aes(x = factor(d13_value), fill = factor(group))) +
 # Cross-tabulation
 ## Current Inflation Knowledge vs. Inflation Forecast Knowledge
 ## Skewed Data vs. Unskewed Data ( understanding and decision making)
-## For people who can correctly understand the probability (? which), what decision do they make? --> I am thinking propotion test see reduced probability. 
+## For people who can correctly understand the probability (? which), what decision do they make? 
 ## Does familarity with the graph type affect understanding and the decision?
 
 
@@ -4299,7 +4307,7 @@ dunnTest(value ~ group, data = df, method = "bonferroni")
 # 
 ```
 
-## Propotion test -prop.test()
+## Proportion test -prop.test()
 - prop.test(): at least one group differs
 <font color="red">continuity correction??</font>
 The prop.test() function only supports alternative = "less" or "greater" when comparing a single proportion to a hypothesized value — not when comparing multiple groups.
